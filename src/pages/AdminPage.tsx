@@ -1,4 +1,4 @@
-import { AlertTriangle, Download, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, Download, LogOut, Plus, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { IMG_TEE_SAGE } from '../data/seedData';
 import { useAuth } from '../hooks/useAuth';
@@ -29,12 +29,13 @@ interface DashboardResponse {
 }
 
 export function AdminPage() {
-  const { user, signInWithGoogle, getAuthToken } = useAuth();
+  const { user, signInWithGoogle, signOut, getAuthToken } = useAuth();
   const [tab, setTab] = useState<'orders' | 'products' | 'merchandising'>('orders');
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [toast, setToast] = useState('');
+  const [signingOut, setSigningOut] = useState(false);
 
   // Product editor state
   const [editingProd, setEditingProd] = useState<Product | null>(null);
@@ -101,14 +102,36 @@ export function AdminPage() {
     );
   }
 
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    try {
+      await signOut();
+      setData(null);
+      setError('');
+    } finally {
+      setSigningOut(false);
+    }
+  };
+
   if (!user.isAdmin || error) {
     return (
       <div className="max-w-lg mx-auto px-4 py-20 text-center">
-        <div className="p-8 rounded-lg bg-[#FCFBF7] border border-[#C5D1B8]">
-          <h1 className="font-display text-2xl font-bold">Access Restricted</h1>
-          <p className="text-sm text-[#4D5A48] mt-2">
-            {error || `Signed in as ${user.email}. Admin privileges are restricted to the store owner.`}
-          </p>
+        <div className="p-8 rounded-lg bg-[#FCFBF7] border border-[#C5D1B8] space-y-5">
+          <div>
+            <h1 className="font-display text-2xl font-bold">Access Restricted</h1>
+            <p className="text-sm text-[#4D5A48] mt-2">
+              {error || `Signed in as ${user.email}. Admin privileges are restricted to the store owner.`}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            className="px-5 py-2.5 rounded-md bg-[#E7ECE0] border border-[#C5D1B8] text-[#1F2A1C] text-sm font-semibold inline-flex items-center justify-center gap-2 hover:bg-[#9CAF88]/40 transition-colors disabled:opacity-60"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>{signingOut ? 'Signing out...' : 'Sign out'}</span>
+          </button>
         </div>
       </div>
     );
@@ -310,10 +333,12 @@ export function AdminPage() {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10 space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-6 border-b border-[#C5D1B8]">
         <div>
-          <p className="text-xs font-medium text-[#4D5A48]">Protected Store Console</p>
+          <p className="text-xs font-medium text-[#4D5A48]">
+            Protected Store Console · Signed in as {user.email}
+          </p>
           <h1 className="font-display text-3xl font-bold mt-1">Wicked Admin</h1>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {[
             { id: 'orders', label: 'Orders & Refunds' },
             { id: 'products', label: 'Products & Stock' },
@@ -332,6 +357,15 @@ export function AdminPage() {
               {t.label}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            className="px-4 py-2 rounded-md bg-[#E7ECE0] border border-[#C5D1B8] text-[#1F2A1C] text-sm font-semibold inline-flex items-center gap-2 hover:bg-[#9CAF88]/40 transition-colors disabled:opacity-60"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>{signingOut ? 'Signing out...' : 'Sign out'}</span>
+          </button>
         </div>
       </div>
 
