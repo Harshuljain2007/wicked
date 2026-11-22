@@ -133,7 +133,7 @@ export default function App() {
       <MotionConfig reducedMotion="user">
         <AuthProvider>
           <BagProvider>
-            <BrowserRouter>
+            <BrowserRouter basename={import.meta.env.BASE_URL}>
               <ScrollToTop />
               <AppShell />
             </BrowserRouter>

@@ -59,4 +59,7 @@ Full-stack e-commerce storefront and studio console for **Wicked**, built with R
 ## Deployment
 1. Run `npm run lint` and `npm run build` to verify TypeScript and Vite bundling.
 2. Deploy `firestore.rules` via Firebase CLI (`firebase deploy --only firestore:rules`) or AI Studio.
-3. Run `npm start` (`NODE_ENV=production tsx server.ts`) on your Node.js host (Cloud Run, Render, Railway, or Fly.io) with port `3000` exposed and environment variables configured.
+3. **Full-Stack Hosting (Node + Express + API routes)**: Run `npm start` (`NODE_ENV=production tsx server.ts`) on your Node.js host (Cloud Run, Render, Railway, or Fly.io) with port `3000` exposed and environment variables configured.
+4. **GitHub Pages (Static Frontend Preview via `.github/workflows/deploy.yml`)**:
+   - In your GitHub repository, open **Settings -> Pages -> Build and deployment -> Source** and select **GitHub Actions** (do *not* deploy directly from branch `/root`, as browsers cannot run raw `/src/main.tsx`).
+   - Pushing to `main` automatically builds `dist/` with `VITE_BASE_PATH=/<repo-name>/` and publishes `dist/` to GitHub Pages.

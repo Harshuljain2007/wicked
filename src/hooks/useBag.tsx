@@ -8,6 +8,7 @@ import {
 } from 'firebase/firestore';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
+import { SEED_COUPONS } from '../data/seedData';
 import type { CartItem } from '../types';
 import { useAuth } from './useAuth';
 
@@ -180,18 +181,41 @@ export function BagProvider({ children }: { children: ReactNode }) {
 
   const applyCoupon = useCallback(
     async (code: string) => {
-      const res = await fetch('/api/coupons/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, subtotal }),
-      });
-      const data = await res.json();
-      if (!data.valid || !data.coupon) {
-        return { ok: false, message: data.reason || 'Invalid coupon code.' };
+      const normalized = code.trim().toUpperCase();
+      try {
+        const res = await fetch('/api/coupons/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: normalized, subtotal }),
+        });
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          const data = await res.json();
+          if (!data.valid || !data.coupon) {
+            return { ok: false, message: data.reason || 'Invalid coupon code.' };
+          }
+          setCouponCode(data.coupon.code);
+          setCouponDiscountPercent(data.coupon.percentOff);
+          return { ok: true, message: `${data.coupon.code} applied (${data.coupon.percentOff}% off)` };
+        }
+      } catch {
+        // Fall through to seeded client check on static hosts
       }
-      setCouponCode(data.coupon.code);
-      setCouponDiscountPercent(data.coupon.percentOff);
-      return { ok: true, message: `${data.coupon.code} applied (${data.coupon.percentOff}% off)` };
+      const match = SEED_COUPONS.find(
+        (c) => c.code.toUpperCase() === normalized && c.active
+      );
+      if (!match) {
+        return { ok: false, message: 'Coupon code is invalid or expired.' };
+      }
+      if (subtotal < match.minSubtotal) {
+        return {
+          ok: false,
+          message: `Minimum order value of ₹${match.minSubtotal.toLocaleString('en-IN')} required for ${match.code}.`,
+        };
+      }
+      setCouponCode(match.code);
+      setCouponDiscountPercent(match.percentOff);
+      return { ok: true, message: `${match.code} applied (${match.percentOff}% off)` };
     },
     [subtotal]
   );

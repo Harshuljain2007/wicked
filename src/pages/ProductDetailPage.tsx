@@ -16,7 +16,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ProductCard } from '../components/ProductCard';
 import { SizeGuideModal } from '../components/SizeGuideModal';
-import { SEED_PRODUCTS, SEED_REVIEWS } from '../data/seedData';
+import { lookupIndianPincode, SEED_PRODUCTS, SEED_REVIEWS } from '../data/seedData';
 import { useAuth } from '../hooks/useAuth';
 import { useBag } from '../hooks/useBag';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
@@ -197,13 +197,28 @@ export function ProductDetailPage() {
     e.preventDefault();
     setPincodeError('');
     setPincodeInfo(null);
-    const res = await fetch(`/api/pincode/${encodeURIComponent(pincode.trim())}`);
-    const data = await res.json();
-    if (!res.ok) {
-      setPincodeError(data.error || 'Enter a valid 6-digit Indian pincode.');
+    const pin = pincode.trim();
+    try {
+      const res = await fetch(`/api/pincode/${encodeURIComponent(pin)}`);
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await res.json();
+        if (!res.ok) {
+          setPincodeError(data.error || 'Enter a valid 6-digit Indian pincode.');
+          return;
+        }
+        setPincodeInfo(data);
+        return;
+      }
+    } catch {
+      // Fall back to local Indian pincode lookup on static hosts
+    }
+    const local = lookupIndianPincode(pin);
+    if (!local) {
+      setPincodeError('Enter a valid 6-digit Indian pincode.');
       return;
     }
-    setPincodeInfo(data);
+    setPincodeInfo(local);
   };
 
   const handleSubmitReview = async (e: React.FormEvent) => {

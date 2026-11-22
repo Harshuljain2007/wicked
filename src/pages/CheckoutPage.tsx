@@ -1,6 +1,7 @@
 import { ShieldCheck, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { lookupIndianPincode } from '../data/seedData';
 import { useAuth } from '../hooks/useAuth';
 import { useBag } from '../hooks/useBag';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
@@ -70,14 +71,24 @@ export function CheckoutPage() {
   useEffect(() => {
     if (/^[1-9][0-9]{5}$/.test(pincode)) {
       fetch(`/api/pincode/${pincode}`)
-        .then((r) => (r.ok ? r.json() : null))
+        .then(async (r) => {
+          const ct = r.headers.get('content-type') || '';
+          return r.ok && ct.includes('application/json') ? r.json() : null;
+        })
         .then((data) => {
-          if (data?.city && data?.state) {
-            setCity(data.city);
-            setStateName(data.state);
+          const resolved = data?.city ? data : lookupIndianPincode(pincode);
+          if (resolved?.city && resolved?.state) {
+            setCity(resolved.city);
+            setStateName(resolved.state);
           }
         })
-        .catch(() => {});
+        .catch(() => {
+          const local = lookupIndianPincode(pincode);
+          if (local) {
+            setCity(local.city);
+            setStateName(local.state);
+          }
+        });
     }
   }, [pincode]);
 

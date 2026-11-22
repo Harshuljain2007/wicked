@@ -1,17 +1,22 @@
 import type { BannerConfig, Coupon, Product, Review, ShowcaseData } from '../types';
 
-export const IMG_HERO = '/src/assets/images/wicked_hero_campaign_1795345381120.jpg';
-export const IMG_LOOKBOOK = '/src/assets/images/wicked_lookbook_courtyard_1795345381018.jpg';
-export const IMG_FABRIC = '/src/assets/images/wicked_fabric_macro_1795345381468.jpg';
-export const IMG_TEE_SAGE = '/src/assets/images/wicked_tee_sage_1795345380963.jpg';
-export const IMG_TEE_CHARCOAL = '/src/assets/images/wicked_tee_charcoal_1795345380471.jpg';
-export const IMG_KURTA_SAGE = '/src/assets/images/wicked_kurta_sage_1795345380633.jpg';
-export const IMG_SHIRT_OFFWHITE = '/src/assets/images/wicked_shirt_offwhite_1795345381450.jpg';
-export const IMG_HOODIE_FRONT = '/src/assets/images/wicked_hoodie_front_1795345380349.jpg';
-export const IMG_HOODIE_SIDE = '/src/assets/images/wicked_hoodie_side_1795345381483.jpg';
-export const IMG_HOODIE_BACK = '/src/assets/images/wicked_hoodie_back_1795345381587.jpg';
-export const IMG_BOTTOMS_SAND = '/src/assets/images/wicked_bottoms_sand_1795345381876.jpg';
-export const IMG_ACCESSORY_SLING = '/src/assets/images/wicked_accessory_sling_1795345380698.jpg';
+const ASSET_BASE =
+  (typeof import.meta !== 'undefined' &&
+    (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL) ||
+  '/';
+
+export const IMG_HERO = `${ASSET_BASE}src/assets/images/wicked_hero_campaign_1795345381120.jpg`;
+export const IMG_LOOKBOOK = `${ASSET_BASE}src/assets/images/wicked_lookbook_courtyard_1795345381018.jpg`;
+export const IMG_FABRIC = `${ASSET_BASE}src/assets/images/wicked_fabric_macro_1795345381468.jpg`;
+export const IMG_TEE_SAGE = `${ASSET_BASE}src/assets/images/wicked_tee_sage_1795345380963.jpg`;
+export const IMG_TEE_CHARCOAL = `${ASSET_BASE}src/assets/images/wicked_tee_charcoal_1795345380471.jpg`;
+export const IMG_KURTA_SAGE = `${ASSET_BASE}src/assets/images/wicked_kurta_sage_1795345380633.jpg`;
+export const IMG_SHIRT_OFFWHITE = `${ASSET_BASE}src/assets/images/wicked_shirt_offwhite_1795345381450.jpg`;
+export const IMG_HOODIE_FRONT = `${ASSET_BASE}src/assets/images/wicked_hoodie_front_1795345380349.jpg`;
+export const IMG_HOODIE_SIDE = `${ASSET_BASE}src/assets/images/wicked_hoodie_side_1795345381483.jpg`;
+export const IMG_HOODIE_BACK = `${ASSET_BASE}src/assets/images/wicked_hoodie_back_1795345381587.jpg`;
+export const IMG_BOTTOMS_SAND = `${ASSET_BASE}src/assets/images/wicked_bottoms_sand_1795345381876.jpg`;
+export const IMG_ACCESSORY_SLING = `${ASSET_BASE}src/assets/images/wicked_accessory_sling_1795345380698.jpg`;
 
 const APPAREL_SIZES = ['S', 'M', 'L', 'XL', 'XXL'];
 
