@@ -22,6 +22,12 @@ import { useBag } from '../hooks/useBag';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
 import { useRecentlyViewed } from '../hooks/useRecentlyViewed';
 import { useReducedMotion } from '../hooks/useReducedMotion';
+import {
+  getStaticProducts,
+  getStaticReviews,
+  staticSubmitReview,
+  tryApiJson,
+} from '../lib/staticStore';
 import type { Product, Review } from '../types';
 
 export function ProductDetailPage() {
@@ -66,18 +72,26 @@ export function ProductDetailPage() {
   const touchStartX = useRef<number | null>(null);
 
   useEffect(() => {
-    fetch(`/api/products/${encodeURIComponent(slug || '')}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.product) {
-          setProduct(data.product);
-          setReviews(data.reviews || []);
-          setColorIdx(0);
-          setImgIdx(0);
-          setQuantity(1);
-        }
-      })
-      .catch(() => {});
+    tryApiJson<{ product?: Product; reviews?: Review[] }>(
+      `/api/products/${encodeURIComponent(slug || '')}`
+    ).then((api) => {
+      if (api.available && api.ok && api.data?.product) {
+        setProduct(api.data.product);
+        setReviews(api.data.reviews || []);
+        setColorIdx(0);
+        setImgIdx(0);
+        setQuantity(1);
+        return;
+      }
+      const fallbackProd = getStaticProducts().find((p) => p.slug === slug || p.id === slug);
+      if (fallbackProd) {
+        setProduct(fallbackProd);
+        setReviews(getStaticReviews(fallbackProd.id));
+        setColorIdx(0);
+        setImgIdx(0);
+        setQuantity(1);
+      }
+    });
   }, [slug]);
 
   useEffect(() => {
@@ -225,11 +239,11 @@ export function ProductDetailPage() {
     e.preventDefault();
     setReviewMsg('');
     const token = await getAuthToken();
-    if (!token) {
+    if (!token || !user) {
       setReviewMsg('Please sign in on the Account page to post a review.');
       return;
     }
-    const res = await fetch('/api/orders/reviews', {
+    const api = await tryApiJson<{ review?: Review; error?: string }>('/api/orders/reviews', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -243,12 +257,30 @@ export function ProductDetailPage() {
         body: reviewBody,
       }),
     });
-    const data = await res.json();
-    if (!res.ok) {
-      setReviewMsg(data.error || 'Could not submit review.');
+
+    if (api.available) {
+      if (!api.ok || !api.data.review) {
+        setReviewMsg(api.data.error || 'Could not submit review.');
+        return;
+      }
+      setReviews((prev) => [api.data.review!, ...prev]);
+      setReviewTitle('');
+      setReviewBody('');
+      setReviewMsg('Review published.');
       return;
     }
-    setReviews((prev) => [data.review, ...prev]);
+
+    const review = await staticSubmitReview(
+      {
+        productId: product.id,
+        authorName: user.displayName || 'Wicked Member',
+        rating: reviewRating,
+        title: reviewTitle,
+        body: reviewBody,
+      },
+      user
+    );
+    setReviews((prev) => [review, ...prev]);
     setReviewTitle('');
     setReviewBody('');
     setReviewMsg('Review published.');

@@ -5,6 +5,13 @@ import { lookupIndianPincode } from '../data/seedData';
 import { useAuth } from '../hooks/useAuth';
 import { useBag } from '../hooks/useBag';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
+import {
+  staticCreateOrder,
+  staticSandboxAuthorize,
+  staticVerifyPayment,
+  tryApiJson,
+} from '../lib/staticStore';
+import type { Order } from '../types';
 
 declare global {
   interface Window {
@@ -122,17 +129,31 @@ export function CheckoutPage() {
     setVerifying(true);
     setErrorMsg('');
     try {
-      const res = await fetch('/api/payments/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.verified) {
-        throw new Error(data.error || 'Payment verification failed. Please try again.');
+      const api = await tryApiJson<{ verified?: boolean; order?: Order; orderToken?: string; error?: string }>(
+        '/api/payments/verify',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      if (api.available) {
+        if (!api.ok || !api.data.verified || !api.data.order) {
+          throw new Error(api.data.error || 'Payment verification failed. Please try again.');
+        }
+        clearBag();
+        navigate(`/order/${api.data.order.id}?token=${encodeURIComponent(api.data.orderToken || '')}`);
+        return;
       }
+
+      const verified = staticVerifyPayment({
+        orderId: payload.orderId,
+        razorpay_order_id: payload.razorpay_order_id,
+        razorpay_payment_id: payload.razorpay_payment_id,
+      });
       clearBag();
-      navigate(`/order/${data.order.id}?token=${encodeURIComponent(data.orderToken)}`);
+      navigate(`/order/${verified.order.id}?token=${encodeURIComponent(verified.orderToken)}`);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Verification failed. Retry payment.');
     } finally {
@@ -180,25 +201,58 @@ export function CheckoutPage() {
       };
 
       if (paymentMethod === 'cod') {
-        const res = await fetch('/api/payments/cod', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Unable to place COD order.');
+        const api = await tryApiJson<{ order?: Order; orderToken?: string; error?: string }>(
+          '/api/payments/cod',
+          {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload),
+          }
+        );
+        if (api.available) {
+          if (!api.ok || !api.data.order) throw new Error(api.data.error || 'Unable to place COD order.');
+          clearBag();
+          navigate(`/order/${api.data.order.id}?token=${encodeURIComponent(api.data.orderToken || '')}`);
+          return;
+        }
+        const created = await staticCreateOrder(payload, 'cod', user);
         clearBag();
-        navigate(`/order/${data.order.id}?token=${encodeURIComponent(data.orderToken)}`);
+        navigate(`/order/${created.order.id}?token=${encodeURIComponent(created.orderToken)}`);
         return;
       }
 
-      const res = await fetch('/api/payments/create-order', {
+      const api = await tryApiJson<{
+        orderId: string;
+        orderToken: string;
+        razorpayOrderId: string;
+        amountPaise: number;
+        currency: string;
+        keyId?: string;
+        mode?: string;
+        error?: string;
+      }>('/api/payments/create-order', {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Unable to initiate payment.');
+
+      const data = api.available
+        ? (() => {
+            if (!api.ok) throw new Error(api.data.error || 'Unable to initiate payment.');
+            return api.data;
+          })()
+        : await (async () => {
+            const created = await staticCreateOrder(payload, 'razorpay', user);
+            return {
+              orderId: created.order.id,
+              orderToken: created.orderToken,
+              razorpayOrderId: created.razorpayOrderId || `order_test_${Date.now()}`,
+              amountPaise: created.amountPaise,
+              currency: 'INR',
+              keyId: '',
+              mode: 'sandbox',
+            };
+          })();
 
       if (data.mode === 'razorpay' && window.Razorpay) {
         const rzp = new window.Razorpay({
@@ -255,13 +309,24 @@ export function CheckoutPage() {
     setSandboxModal(null);
     setVerifying(true);
     try {
-      const signRes = await fetch('/api/payments/sandbox-authorize', {
+      const api = await tryApiJson<{
+        razorpay_order_id: string;
+        razorpay_payment_id: string;
+        razorpay_signature: string;
+        error?: string;
+      }>('/api/payments/sandbox-authorize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ razorpayOrderId: modalData.razorpayOrderId }),
       });
-      const signed = await signRes.json();
-      if (!signRes.ok) throw new Error(signed.error || 'Authorization error.');
+
+      const signed = api.available
+        ? (() => {
+            if (!api.ok) throw new Error(api.data.error || 'Authorization error.');
+            return api.data;
+          })()
+        : staticSandboxAuthorize(modalData.razorpayOrderId);
+
       await verifyPaymentOnServer({
         orderId: modalData.orderId,
         razorpay_order_id: signed.razorpay_order_id,

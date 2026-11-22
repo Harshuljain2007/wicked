@@ -2,6 +2,7 @@ import { CheckCircle2, Package, Search, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
+import { staticTrackOrder, tryApiJson } from '../lib/staticStore';
 import type { Order } from '../types';
 
 const TRACKING_STEPS = ['placed', 'paid', 'packed', 'shipped', 'delivered'];
@@ -24,17 +25,30 @@ export function TrackOrderPage() {
     setResult(null);
     setLoading(true);
     try {
-      const res = await fetch('/api/orders/track', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId: orderId.trim(), contact: contact.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || 'Could not locate this order.');
+      const api = await tryApiJson<{ order?: Order; orderToken?: string; error?: string }>(
+        '/api/orders/track',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId: orderId.trim(), contact: contact.trim() }),
+        }
+      );
+
+      if (api.available) {
+        if (!api.ok || !api.data.order) {
+          setError(api.data.error || 'Could not locate this order.');
+          return;
+        }
+        setResult({ order: api.data.order, orderToken: api.data.orderToken || '' });
         return;
       }
-      setResult({ order: data.order, orderToken: data.orderToken });
+
+      const localMatch = staticTrackOrder(orderId, contact);
+      if (!localMatch) {
+        setError('Order not found or contact email/phone does not match.');
+        return;
+      }
+      setResult(localMatch);
     } catch {
       setError('Network error while checking order status.');
     } finally {

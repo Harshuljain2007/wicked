@@ -15,13 +15,16 @@ export function ShowcasePage() {
   });
 
   useEffect(() => {
-    fetch('/api/showcase')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.showcase) setShowcase(data.showcase);
-        if (data?.products) setProducts(data.products);
-      })
-      .catch(() => {});
+    import('../lib/staticStore').then(({ getStaticProducts, tryApiJson }) => {
+      tryApiJson<{ showcase?: ShowcaseData; products?: Product[] }>('/api/showcase').then((api) => {
+        if (api.available && api.ok) {
+          if (api.data?.showcase) setShowcase(api.data.showcase);
+          if (api.data?.products) setProducts(api.data.products);
+        } else {
+          setProducts(getStaticProducts());
+        }
+      });
+    });
   }, []);
 
   return (

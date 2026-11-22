@@ -22,6 +22,7 @@ import {
   handleFirestoreError,
   OperationType,
 } from '../firebase';
+import { staticRequestOtp, staticVerifyOtp, tryApiJson } from '../lib/staticStore';
 
 export interface SavedAddressRecord {
   id: string;
@@ -130,30 +131,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const requestOtp = useCallback(async (email: string) => {
-    const res = await fetch('/api/auth/otp/request', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Could not send verification code.');
-    return { previewCode: data.previewCode, message: data.message };
+    const api = await tryApiJson<{ previewCode?: string; message?: string; error?: string }>(
+      '/api/auth/otp/request',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      }
+    );
+    if (api.available) {
+      if (!api.ok) throw new Error(api.data.error || 'Could not send verification code.');
+      return {
+        previewCode: api.data.previewCode,
+        message: api.data.message || 'Verification code sent.',
+      };
+    }
+    return staticRequestOtp(email);
   }, []);
 
   const verifyOtp = useCallback(async (email: string, code: string) => {
-    const res = await fetch('/api/auth/otp/verify', {
+    const api = await tryApiJson<{
+      token?: string;
+      user?: { email: string; isAdmin?: boolean };
+      error?: string;
+    }>('/api/auth/otp/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, code }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Invalid code.');
-    setOtpToken(data.token);
+    if (api.available) {
+      if (!api.ok || !api.data.token || !api.data.user) {
+        throw new Error(api.data.error || 'Invalid code.');
+      }
+      setOtpToken(api.data.token);
+      setOtpUser({
+        uid: `otp_${email.toLowerCase()}`,
+        email: api.data.user.email,
+        displayName: api.data.user.email.split('@')[0],
+        isAdmin: Boolean(api.data.user.isAdmin),
+        provider: 'otp',
+      });
+      return;
+    }
+
+    const verified = staticVerifyOtp(email, code);
+    setOtpToken(verified.token);
     setOtpUser({
-      uid: `otp_${email.toLowerCase()}`,
-      email: data.user.email,
-      displayName: data.user.email.split('@')[0],
-      isAdmin: Boolean(data.user.isAdmin),
+      uid: `otp_${verified.email}`,
+      email: verified.email,
+      displayName: verified.email.split('@')[0],
+      isAdmin: verified.isAdmin,
       provider: 'otp',
     });
   }, []);

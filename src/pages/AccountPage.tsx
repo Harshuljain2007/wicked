@@ -7,6 +7,7 @@ import { SEED_PRODUCTS } from '../data/seedData';
 import { useAuth } from '../hooks/useAuth';
 import { useBag } from '../hooks/useBag';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
+import { staticGetAccountOrders, tryApiJson } from '../lib/staticStore';
 import type { Order } from '../types';
 
 export function AccountPage() {
@@ -43,14 +44,17 @@ export function AccountPage() {
     let active = true;
     (async () => {
       const token = await getAuthToken();
-      if (!token) return;
-      const res = await fetch('/api/orders', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (active) setOrders(data.orders || []);
+      if (token) {
+        const api = await tryApiJson<{ orders?: Order[] }>('/api/orders', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (api.available) {
+          if (api.ok && active) setOrders(api.data.orders || []);
+          return;
+        }
       }
+      const fallbackOrders = await staticGetAccountOrders(user);
+      if (active) setOrders(fallbackOrders);
     })();
     return () => {
       active = false;

@@ -4,6 +4,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
 import { downloadGstInvoicePdf } from '../lib/invoicePdf';
+import { staticGetOrder, staticRequestExchange, tryApiJson } from '../lib/staticStore';
 import type { Order } from '../types';
 
 const TRACKING_STEPS = ['placed', 'paid', 'packed', 'shipped', 'delivered'];
@@ -11,7 +12,7 @@ const TRACKING_STEPS = ['placed', 'paid', 'packed', 'shipped', 'delivered'];
 export function OrderConfirmationPage() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
-  const { getAuthToken } = useAuth();
+  const { user, getAuthToken } = useAuth();
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,13 +37,25 @@ export function OrderConfirmationPage() {
       const url = `/api/orders/${encodeURIComponent(id || '')}${
         tokenParam ? `?token=${encodeURIComponent(tokenParam)}` : ''
       }`;
-      const res = await fetch(url, { headers });
-      const data = await res.json();
+      const api = await tryApiJson<{ order?: Order; error?: string }>(url, { headers });
       if (!active) return;
-      if (!res.ok) {
-        setError(data.error || 'Could not load order.');
+
+      if (api.available) {
+        if (!api.ok || !api.data.order) {
+          setError(api.data.error || 'Could not load order.');
+        } else {
+          setOrder(api.data.order);
+        }
+        setLoading(false);
+        return;
+      }
+
+      const fallbackOrder = await staticGetOrder(id || '', tokenParam, user);
+      if (!active) return;
+      if (!fallbackOrder) {
+        setError('Could not locate this order in this browser session.');
       } else {
-        setOrder(data.order);
+        setOrder(fallbackOrder);
       }
       setLoading(false);
     }
@@ -50,7 +63,7 @@ export function OrderConfirmationPage() {
     return () => {
       active = false;
     };
-  }, [id, tokenParam, getAuthToken]);
+  }, [id, tokenParam, getAuthToken, user]);
 
   const handleRequestExchange = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,17 +72,32 @@ export function OrderConfirmationPage() {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (authToken) headers.Authorization = `Bearer ${authToken}`;
 
-    const res = await fetch(`/api/orders/${encodeURIComponent(order.id)}/exchange`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ reason: exchangeReason.trim(), token: tokenParam }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setExchangeFeedback(data.error || 'Could not submit exchange request.');
+    const api = await tryApiJson<{ order?: Order; error?: string }>(
+      `/api/orders/${encodeURIComponent(order.id)}/exchange`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ reason: exchangeReason.trim(), token: tokenParam }),
+      }
+    );
+
+    if (api.available) {
+      if (!api.ok || !api.data.order) {
+        setExchangeFeedback(api.data.error || 'Could not submit exchange request.');
+        return;
+      }
+      setOrder(api.data.order);
+      setExchangeReason('');
+      setExchangeFeedback('7-day exchange request registered. Our courier will schedule pickup.');
       return;
     }
-    setOrder(data.order);
+
+    const updated = staticRequestExchange(order.id, exchangeReason.trim());
+    if (!updated) {
+      setExchangeFeedback('Could not submit exchange request.');
+      return;
+    }
+    setOrder(updated);
     setExchangeReason('');
     setExchangeFeedback('7-day exchange request registered. Our courier will schedule pickup.');
   };

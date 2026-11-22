@@ -201,7 +201,8 @@ export function BagProvider({ children }: { children: ReactNode }) {
       } catch {
         // Fall through to seeded client check on static hosts
       }
-      const match = SEED_COUPONS.find(
+      const { getStaticCoupons } = await import('../lib/staticStore');
+      const match = getStaticCoupons().find(
         (c) => c.code.toUpperCase() === normalized && c.active
       );
       if (!match) {

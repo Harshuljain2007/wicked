@@ -60,16 +60,20 @@ export function HomePage() {
   });
 
   useEffect(() => {
-    fetch('/api/showcase')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.products) setProducts(data.products);
-        if (data?.banner) setBanner(data.banner);
-        if (data?.showcase) setShowcase(data.showcase);
-      })
-      .catch(() => {
-        // Keep seeded defaults
-      });
+    import('../lib/staticStore').then(({ getStaticBanner, getStaticProducts, tryApiJson }) => {
+      tryApiJson<{ products?: Product[]; banner?: BannerConfig; showcase?: ShowcaseData }>('/api/showcase').then(
+        (api) => {
+          if (api.available && api.ok) {
+            if (api.data?.products) setProducts(api.data.products);
+            if (api.data?.banner) setBanner(api.data.banner);
+            if (api.data?.showcase) setShowcase(api.data.showcase);
+          } else {
+            setProducts(getStaticProducts());
+            setBanner(getStaticBanner());
+          }
+        }
+      );
+    });
   }, []);
 
   const featuredProducts = products.filter((p) => p.featured).slice(0, 6);

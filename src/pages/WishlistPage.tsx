@@ -17,12 +17,15 @@ export function WishlistPage() {
   });
 
   useEffect(() => {
-    fetch('/api/products')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.products) setProducts(data.products);
-      })
-      .catch(() => {});
+    import('../lib/staticStore').then(({ getStaticProducts, tryApiJson }) => {
+      tryApiJson<{ products?: Product[] }>('/api/products').then((api) => {
+        if (api.available && api.ok && api.data?.products) {
+          setProducts(api.data.products);
+        } else {
+          setProducts(getStaticProducts());
+        }
+      });
+    });
   }, []);
 
   const wishedProducts = products.filter((p) => wishlistIds.includes(p.id));

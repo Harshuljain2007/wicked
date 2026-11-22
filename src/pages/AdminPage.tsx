@@ -1,8 +1,19 @@
 import { AlertTriangle, Download, LogOut, Plus, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { IMG_TEE_SAGE } from '../data/seedData';
+import { IMG_TEE_SAGE, SEED_SHOWCASE } from '../data/seedData';
 import { useAuth } from '../hooks/useAuth';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
+import {
+  staticAdminDeleteProduct,
+  staticAdminOrdersCsv,
+  staticAdminRefundOrder,
+  staticAdminSaveBanner,
+  staticAdminSaveCoupons,
+  staticAdminUpdateOrder,
+  staticAdminUpsertProduct,
+  staticGetAdminDashboard,
+  tryApiJson,
+} from '../lib/staticStore';
 import type { BannerConfig, Coupon, Order, OrderStatus, Product, ShowcaseData } from '../types';
 
 interface DashboardResponse {
@@ -62,18 +73,30 @@ export function AdminPage() {
   const loadDashboard = useCallback(async () => {
     const token = await getAuthToken();
     if (!token) return;
-    const res = await fetch('/api/admin/dashboard', {
+    const api = await tryApiJson<DashboardResponse & { error?: string }>('/api/admin/dashboard', {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const json = await res.json();
-    if (!res.ok) {
-      setError(json.error || 'Admin access required.');
+    if (api.available) {
+      if (!api.ok) {
+        setError(api.data.error || 'Admin access required.');
+        return;
+      }
+      setError('');
+      setData(api.data);
+      setBannerHeadline(api.data.banner?.headline || '');
+      setMarqueeText(api.data.banner?.marqueeText || '');
       return;
     }
+
+    const staticDash = staticGetAdminDashboard();
+    const fallbackData: DashboardResponse = {
+      ...staticDash,
+      showcase: SEED_SHOWCASE,
+    };
     setError('');
-    setData(json);
-    setBannerHeadline(json.banner?.headline || '');
-    setMarqueeText(json.banner?.marqueeText || '');
+    setData(fallbackData);
+    setBannerHeadline(fallbackData.banner?.headline || '');
+    setMarqueeText(fallbackData.banner?.marqueeText || '');
   }, [getAuthToken]);
 
   useEffect(() => {
@@ -140,7 +163,7 @@ export function AdminPage() {
   const handleUpdateOrder = async (orderId: string, status: OrderStatus, trackingNumber?: string) => {
     const token = await getAuthToken();
     if (!token) return;
-    const res = await fetch(`/api/admin/orders/${encodeURIComponent(orderId)}`, {
+    const api = await tryApiJson(`/api/admin/orders/${encodeURIComponent(orderId)}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -148,39 +171,63 @@ export function AdminPage() {
       },
       body: JSON.stringify({ status, trackingNumber }),
     });
-    if (res.ok) {
-      setToast(`Order ${orderId} updated to ${status}`);
-      loadDashboard();
+    if (api.available) {
+      if (api.ok) {
+        setToast(`Order ${orderId} updated to ${status}`);
+        loadDashboard();
+      }
+      return;
     }
+    staticAdminUpdateOrder(orderId, status, trackingNumber);
+    setToast(`Order ${orderId} updated to ${status}`);
+    loadDashboard();
   };
 
   const handleRefundOrder = async (order: Order) => {
     const token = await getAuthToken();
     if (!token) return;
-    const res = await fetch(`/api/admin/orders/${encodeURIComponent(order.id)}/refund`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ amountInr: order.total, reason: 'Admin issued refund' }),
-    });
-    const json = await res.json();
-    if (res.ok) {
-      setToast(`Refund issued for ${order.id} (₹${order.total.toLocaleString('en-IN')})`);
-      loadDashboard();
-    } else {
-      setToast(json.error || 'Refund failed.');
+    const api = await tryApiJson<{ error?: string }>(
+      `/api/admin/orders/${encodeURIComponent(order.id)}/refund`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ amountInr: order.total, reason: 'Admin issued refund' }),
+      }
+    );
+    if (api.available) {
+      if (api.ok) {
+        setToast(`Refund issued for ${order.id} (₹${order.total.toLocaleString('en-IN')})`);
+        loadDashboard();
+      } else {
+        setToast(api.data.error || 'Refund failed.');
+      }
+      return;
     }
+    staticAdminRefundOrder(order.id);
+    setToast(`Refund issued for ${order.id} (₹${order.total.toLocaleString('en-IN')})`);
+    loadDashboard();
   };
 
   const handleExportCsv = async () => {
     const token = await getAuthToken();
     if (!token) return;
-    const res = await fetch('/api/admin/orders/export.csv', {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const blob = await res.blob();
+    let blob: Blob;
+    try {
+      const res = await fetch('/api/admin/orders/export.csv', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const ct = res.headers.get('content-type') || '';
+      if (res.ok && ct.includes('text/csv')) {
+        blob = await res.blob();
+      } else {
+        blob = new Blob([staticAdminOrdersCsv()], { type: 'text/csv;charset=utf-8;' });
+      }
+    } catch {
+      blob = new Blob([staticAdminOrdersCsv()], { type: 'text/csv;charset=utf-8;' });
+    }
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -242,7 +289,7 @@ export function AdminPage() {
       reviewCount: editingProd?.reviewCount || 0,
     };
 
-    const res = await fetch(
+    const api = await tryApiJson(
       editingProd ? `/api/admin/products/${encodeURIComponent(id)}` : '/api/admin/products',
       {
         method: editingProd ? 'PUT' : 'POST',
@@ -253,7 +300,8 @@ export function AdminPage() {
         body: JSON.stringify(payload),
       }
     );
-    if (res.ok) {
+    if (!api.available || api.ok) {
+      if (!api.available) staticAdminUpsertProduct(payload);
       setToast(editingProd ? 'Product updated.' : 'Product created.');
       setEditingProd(null);
       setProdName('');
@@ -265,11 +313,12 @@ export function AdminPage() {
   const handleDeleteProduct = async (id: string) => {
     const token = await getAuthToken();
     if (!token) return;
-    const res = await fetch(`/api/admin/products/${encodeURIComponent(id)}`, {
+    const api = await tryApiJson(`/api/admin/products/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (res.ok) {
+    if (!api.available || api.ok) {
+      if (!api.available) staticAdminDeleteProduct(id);
       setToast('Product deleted.');
       loadDashboard();
     }
@@ -279,19 +328,21 @@ export function AdminPage() {
     e.preventDefault();
     const token = await getAuthToken();
     if (!token || !data?.banner) return;
-    const res = await fetch('/api/admin/banners', {
+    const nextBanner = {
+      ...data.banner,
+      headline: bannerHeadline,
+      marqueeText,
+    };
+    const api = await tryApiJson('/api/admin/banners', {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({
-        ...data.banner,
-        headline: bannerHeadline,
-        marqueeText,
-      }),
+      body: JSON.stringify(nextBanner),
     });
-    if (res.ok) {
+    if (!api.available || api.ok) {
+      if (!api.available) staticAdminSaveBanner(nextBanner);
       setToast('Homepage banner updated.');
       loadDashboard();
     }
@@ -310,7 +361,7 @@ export function AdminPage() {
         active: true,
       },
     ];
-    const res = await fetch('/api/admin/coupons', {
+    const api = await tryApiJson('/api/admin/coupons', {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -318,7 +369,8 @@ export function AdminPage() {
       },
       body: JSON.stringify(updated),
     });
-    if (res.ok) {
+    if (!api.available || api.ok) {
+      if (!api.available) staticAdminSaveCoupons(updated);
       setNewCouponCode('');
       setToast('Coupon added.');
       loadDashboard();
