@@ -1,0 +1,117 @@
+@import "tailwindcss";
+
+:root {
+  --color-sage: #9CAF88;
+  --color-sage-deep: #7F956B;
+  --color-sage-tint: #E7ECE0;
+  --color-sage-border: #C5D1B8;
+  --color-offwhite: #F7F5EF;
+  --color-surface: #FCFBF7;
+  --color-tomato: #E8412C;
+  --color-tomato-hover: #CF331F;
+  --color-ink: #1F2A1C;
+  --color-ink-muted: #4D5A48;
+  --color-line: #CFD9C3;
+
+  --font-display: 'Bricolage Grotesque', system-ui, -apple-system, sans-serif;
+  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    background-color: var(--color-offwhite);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-offwhite);
+    color: var(--color-ink);
+    margin: 0;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+    color: var(--color-ink);
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 2px;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  a[href] {
+    transition:
+      transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      background-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      color 160ms ease,
+      opacity 160ms ease;
+  }
+
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active {
+    transform: scale(0.965);
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.btn-tomato {
+  background-color: var(--color-tomato);
+  color: #FFFFFF;
+  font-weight: 700;
+  font-size: 1.125rem;
+  line-height: 1.25;
+  transition:
+    background-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.btn-tomato:hover:not(:disabled) {
+  background-color: var(--color-tomato-hover);
+  transform: translateY(-1px);
+}
+
+.btn-tomato:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn-tomato:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@keyframes wicked-marquee {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.animate-wicked-marquee {
+  animation: wicked-marquee 26s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-wicked-marquee {
+    animation: none;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active,
+  .btn-tomato:active:not(:disabled) {
+    transform: none;
+  }
+}

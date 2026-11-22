@@ -1,0 +1,8 @@
+{
+  "name": "Wicked",
+  "description": "Wicked — Contemporary Indian streetwear, ethnic fusion kurtas, heavyweight tees, and everyday basics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
