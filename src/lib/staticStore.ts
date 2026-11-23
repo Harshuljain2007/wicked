@@ -3,10 +3,14 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
+  orderBy,
   query,
   serverTimestamp,
   setDoc,
+  updateDoc,
   where,
+  type Timestamp,
 } from 'firebase/firestore';
 import {
   IMG_KURTA_SAGE,
@@ -15,7 +19,7 @@ import {
   SEED_PRODUCTS,
   SEED_REVIEWS,
 } from '../data/seedData';
-import { auth, db } from '../firebase';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import type { AuthUser } from '../hooks/useAuth';
 import type {
   BannerConfig,
@@ -78,6 +82,33 @@ function writeJson<T>(key: string, value: T): void {
   }
 }
 
+function toIsoString(value: unknown): string {
+  if (typeof value === 'string' && value.trim()) return value;
+  if (value && typeof value === 'object') {
+    const ts = value as Partial<Timestamp> & { seconds?: number; toDate?: () => Date };
+    if (typeof ts.toDate === 'function') {
+      return ts.toDate().toISOString();
+    }
+    if (typeof ts.seconds === 'number') {
+      return new Date(ts.seconds * 1000).toISOString();
+    }
+  }
+  return new Date().toISOString();
+}
+
+function sanitizeFirestoreUserId(rawUserId: string | undefined): string {
+  const fbUser = auth.currentUser;
+  if (fbUser && fbUser.emailVerified) {
+    return fbUser.uid;
+  }
+  const cleaned = (rawUserId || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+  if (/^(guest|otp)_[a-zA-Z0-9_-]+$/.test(cleaned)) {
+    return cleaned.slice(0, 128);
+  }
+  const suffix = cleaned.replace(/^_+/, '') || Date.now().toString(36);
+  return `guest_${suffix}`.slice(0, 128);
+}
+
 function getSeedOrders(): Order[] {
   const now = '2026-11-18T10:30:00.000Z';
   return [
@@ -135,6 +166,67 @@ function calculateGstBreakdown(items: CartItem[], discountRatio: number): number
   return Math.round(totalGst * 100) / 100;
 }
 
+function normalizeFirestoreOrder(raw: Record<string, unknown>): Order {
+  const d = raw as Partial<Order>;
+  const items = Array.isArray(d.items) ? (d.items as CartItem[]) : [];
+  const subtotal = Number(d.subtotal || 0);
+  const discount = Number(d.discount || 0);
+  const discountRatio = subtotal > 0 ? discount / subtotal : 0;
+  return {
+    id: String(d.id || ''),
+    userId: String(d.userId || ''),
+    customerEmail: String(d.customerEmail || d.shippingAddress?.email || ''),
+    customerPhone: String(d.customerPhone || d.shippingAddress?.phone || ''),
+    status: (d.status || 'placed') as OrderStatus,
+    paymentMethod: d.paymentMethod === 'cod' ? 'cod' : 'razorpay',
+    deliveryMethod: d.deliveryMethod === 'express' ? 'express' : 'standard',
+    razorpayOrderId: d.razorpayOrderId ? String(d.razorpayOrderId) : undefined,
+    razorpayPaymentId: d.razorpayPaymentId ? String(d.razorpayPaymentId) : undefined,
+    subtotal,
+    discount,
+    shippingFee: Number(d.shippingFee || 0),
+    gstAmount:
+      typeof d.gstAmount === 'number'
+        ? d.gstAmount
+        : calculateGstBreakdown(items, discountRatio),
+    total: Number(d.total || 0),
+    couponCode: d.couponCode ? String(d.couponCode) : undefined,
+    giftNote: d.giftNote ? String(d.giftNote) : undefined,
+    gstin: d.gstin ? String(d.gstin) : undefined,
+    items,
+    shippingAddress: d.shippingAddress as ShippingAddress,
+    trackingNumber: d.trackingNumber ? String(d.trackingNumber) : undefined,
+    exchangeRequested: Boolean(d.exchangeRequested),
+    exchangeReason: d.exchangeReason ? String(d.exchangeReason) : undefined,
+    refundId: d.refundId ? String(d.refundId) : undefined,
+    refundAmount: typeof d.refundAmount === 'number' ? d.refundAmount : undefined,
+    createdAt: toIsoString(d.createdAt),
+    updatedAt: toIsoString(d.updatedAt),
+  };
+}
+
+export function mergeOrdersList(...lists: Order[][]): Order[] {
+  const byId = new Map<string, Order>();
+  for (const list of lists) {
+    for (const order of list) {
+      if (!order?.id) continue;
+      const prev = byId.get(order.id);
+      if (!prev) {
+        byId.set(order.id, order);
+        continue;
+      }
+      const prevTime = new Date(prev.updatedAt || prev.createdAt).getTime();
+      const nextTime = new Date(order.updatedAt || order.createdAt).getTime();
+      if (nextTime >= prevTime) {
+        byId.set(order.id, { ...prev, ...order });
+      }
+    }
+  }
+  return Array.from(byId.values()).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+}
+
 export function getStaticProducts(): Product[] {
   return readJson<Product[]>(PRODUCTS_KEY, SEED_PRODUCTS);
 }
@@ -152,17 +244,19 @@ export function getStaticReviews(productId?: string): Review[] {
   return productId ? all.filter((r) => r.productId === productId) : all;
 }
 
-function getStaticOrders(): Order[] {
+export function getStaticOrders(): Order[] {
   const saved = readJson<Order[]>(ORDERS_KEY, []);
   const seeds = getSeedOrders();
   const merged = [...saved];
   for (const s of seeds) {
     if (!merged.some((o) => o.id === s.id)) merged.push(s);
   }
-  return merged;
+  return merged.sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
 }
 
-function saveStaticOrder(order: Order): void {
+export function saveStaticOrder(order: Order): void {
   const existing = getStaticOrders().filter((o) => o.id !== order.id);
   existing.unshift(order);
   writeJson(ORDERS_KEY, existing);
@@ -172,31 +266,162 @@ function makeOrderToken(orderId: string): string {
   return `static_tok_${orderId}`;
 }
 
-async function syncOrderToFirestore(order: Order): Promise<void> {
-  const fbUser = auth.currentUser;
-  if (!fbUser || !fbUser.emailVerified) return;
+function buildOrderFirestorePayload(order: Order, userIdOverride?: string): Record<string, unknown> {
+  const userId = userIdOverride || sanitizeFirestoreUserId(order.userId);
+  const docData: Record<string, unknown> = {
+    id: order.id,
+    userId,
+    customerEmail: (order.customerEmail || order.shippingAddress.email || '').slice(0, 180),
+    customerPhone: (order.customerPhone || order.shippingAddress.phone || '').slice(0, 20),
+    status: order.status,
+    paymentMethod: order.paymentMethod,
+    deliveryMethod: order.deliveryMethod || 'standard',
+    total: Number(order.total || 0),
+    subtotal: Number(order.subtotal || 0),
+    shippingFee: Number(order.shippingFee || 0),
+    discount: Number(order.discount || 0),
+    gstAmount: Number(order.gstAmount || 0),
+    items: order.items,
+    shippingAddress: order.shippingAddress,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+  if (order.razorpayOrderId) docData.razorpayOrderId = order.razorpayOrderId.slice(0, 100);
+  if (order.razorpayPaymentId) docData.razorpayPaymentId = order.razorpayPaymentId.slice(0, 100);
+  if (order.couponCode) docData.couponCode = order.couponCode.slice(0, 32);
+  if (order.giftNote) docData.giftNote = order.giftNote.slice(0, 240);
+  if (order.gstin) docData.gstin = order.gstin.slice(0, 15);
+  if (order.trackingNumber) docData.trackingNumber = order.trackingNumber.slice(0, 80);
+  if (order.refundId) docData.refundId = order.refundId.slice(0, 100);
+  if (typeof order.refundAmount === 'number') docData.refundAmount = order.refundAmount;
+  return docData;
+}
+
+export async function syncOrderToFirestore(order: Order): Promise<void> {
+  saveStaticOrder(order);
   try {
-    const docData: Record<string, unknown> = {
-      id: order.id,
-      userId: fbUser.uid,
-      customerEmail: order.customerEmail,
-      customerPhone: order.customerPhone,
-      status: 'placed',
-      paymentMethod: order.paymentMethod,
-      total: order.total,
-      subtotal: order.subtotal,
-      shippingFee: order.shippingFee,
-      discount: order.discount,
-      items: order.items,
-      shippingAddress: order.shippingAddress,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    };
-    if (order.razorpayOrderId) docData.razorpayOrderId = order.razorpayOrderId;
-    if (order.couponCode) docData.couponCode = order.couponCode;
+    const docData = buildOrderFirestorePayload({
+      ...order,
+      status: order.status === 'paid' ? 'paid' : 'placed',
+    });
     await setDoc(doc(db, 'orders', order.id), docData);
-  } catch {
-    // Keep checkout smooth even if Firestore rules reject optional fields
+  } catch (err) {
+    console.error('Firestore order sync error:', err);
+  }
+}
+
+export async function syncOrderPaymentToFirestore(
+  orderId: string,
+  razorpayOrderId: string,
+  razorpayPaymentId: string,
+  fallbackOrder?: Order
+): Promise<void> {
+  const fbUser = auth.currentUser;
+  if (fbUser && fbUser.emailVerified) {
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        status: 'paid',
+        razorpayPaymentId: razorpayPaymentId.slice(0, 100),
+        updatedAt: serverTimestamp(),
+      });
+      return;
+    } catch {
+      // Document may not exist yet in Firestore (e.g., created via Express backend)
+    }
+  }
+
+  const orderToWrite =
+    fallbackOrder || getStaticOrders().find((o) => o.id === orderId);
+  if (orderToWrite) {
+    await syncOrderToFirestore({
+      ...orderToWrite,
+      status: 'paid',
+      razorpayOrderId,
+      razorpayPaymentId,
+    });
+  }
+}
+
+export function subscribeAdminOrders(
+  onOrders: (orders: Order[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const orders = snap.docs.map((d) =>
+        normalizeFirestoreOrder(d.data() as Record<string, unknown>)
+      );
+      onOrders(orders);
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.LIST, 'orders');
+      } catch (wrapped) {
+        onError?.(wrapped instanceof Error ? wrapped : new Error(String(wrapped)));
+      }
+    }
+  );
+}
+
+export async function fetchAdminOrdersFromFirestore(): Promise<Order[]> {
+  try {
+    const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) =>
+      normalizeFirestoreOrder(d.data() as Record<string, unknown>)
+    );
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'orders');
+  }
+}
+
+export async function syncAdminOrderUpdateToFirestore(
+  orderId: string,
+  updates: {
+    status?: OrderStatus;
+    trackingNumber?: string;
+    refundId?: string;
+    refundAmount?: number;
+  },
+  fallbackOrder?: Order
+): Promise<void> {
+  const orderRef = doc(db, 'orders', orderId);
+  const patch: Record<string, unknown> = {
+    updatedAt: serverTimestamp(),
+  };
+  if (updates.status) patch.status = updates.status;
+  if (typeof updates.trackingNumber === 'string') {
+    patch.trackingNumber = updates.trackingNumber.slice(0, 80);
+  }
+  if (typeof updates.refundId === 'string') {
+    patch.refundId = updates.refundId.slice(0, 100);
+  }
+  if (typeof updates.refundAmount === 'number') {
+    patch.refundAmount = updates.refundAmount;
+  }
+
+  try {
+    const snap = await getDoc(orderRef);
+    if (snap.exists()) {
+      await updateDoc(orderRef, patch);
+      return;
+    }
+    const base = fallbackOrder || getStaticOrders().find((o) => o.id === orderId);
+    if (base) {
+      const merged: Order = {
+        ...base,
+        ...updates,
+      };
+      const payload = buildOrderFirestorePayload(
+        merged,
+        /^[a-zA-Z0-9_-]{2,128}$/.test(base.userId) ? base.userId : 'seed_user_1'
+      );
+      await setDoc(orderRef, payload);
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `orders/${orderId}`);
   }
 }
 
@@ -291,7 +516,7 @@ export async function staticCreateOrder(
 
   const order: Order = {
     id,
-    userId: user?.uid || `guest_${Date.now().toString(36)}`,
+    userId: sanitizeFirestoreUserId(user?.uid),
     customerEmail: payload.shippingAddress.email,
     customerPhone: payload.shippingAddress.phone,
     status: 'placed',
@@ -313,7 +538,10 @@ export async function staticCreateOrder(
   };
 
   saveStaticOrder(order);
-  await syncOrderToFirestore(order);
+  // For verified Firebase users or COD orders, sync immediately; guest Razorpay orders sync on payment verification with status='paid'
+  if (paymentMethod === 'cod' || auth.currentUser?.emailVerified) {
+    await syncOrderToFirestore(order);
+  }
 
   return {
     order,
@@ -332,11 +560,11 @@ export function staticSandboxAuthorize(razorpayOrderId: string) {
   };
 }
 
-export function staticVerifyPayment(params: {
+export async function staticVerifyPayment(params: {
   orderId: string;
   razorpay_order_id: string;
   razorpay_payment_id: string;
-}): { verified: boolean; order: Order; orderToken: string } {
+}): Promise<{ verified: boolean; order: Order; orderToken: string }> {
   const orders = getStaticOrders();
   const order = orders.find((o) => o.id === params.orderId);
   if (!order) {
@@ -350,6 +578,12 @@ export function staticVerifyPayment(params: {
     updatedAt: new Date().toISOString(),
   };
   saveStaticOrder(updated);
+  await syncOrderPaymentToFirestore(
+    updated.id,
+    params.razorpay_order_id,
+    params.razorpay_payment_id,
+    updated
+  );
   return {
     verified: true,
     order: updated,
@@ -362,31 +596,29 @@ export async function staticGetOrder(
   _token: string,
   user: AuthUser | null
 ): Promise<Order | null> {
-  const local = getStaticOrders().find((o) => o.id === id);
-  if (local) return local;
+  const local = getStaticOrders().find((o) => o.id === id) || null;
 
   if (auth.currentUser?.emailVerified && user) {
     try {
       const snap = await getDoc(doc(db, 'orders', id));
       if (snap.exists()) {
-        const d = snap.data() as Partial<Order> & { subtotal?: number };
-        const items = (d.items || []) as CartItem[];
-        return {
-          ...(d as Order),
-          gstAmount: d.gstAmount ?? calculateGstBreakdown(items, 0),
-          deliveryMethod: d.deliveryMethod || 'standard',
-          createdAt: typeof d.createdAt === 'string' ? d.createdAt : new Date().toISOString(),
-          updatedAt: typeof d.updatedAt === 'string' ? d.updatedAt : new Date().toISOString(),
-        };
+        const remote = normalizeFirestoreOrder(snap.data() as Record<string, unknown>);
+        if (!local) return remote;
+        const localTime = new Date(local.updatedAt || local.createdAt).getTime();
+        const remoteTime = new Date(remote.updatedAt || remote.createdAt).getTime();
+        return remoteTime >= localTime ? remote : local;
       }
     } catch {
       // Ignore permission or offline errors
     }
   }
-  return null;
+  return local;
 }
 
-export function staticRequestExchange(orderId: string, reason: string): Order | null {
+export async function staticRequestExchange(
+  orderId: string,
+  reason: string
+): Promise<Order | null> {
   const order = getStaticOrders().find((o) => o.id === orderId);
   if (!order) return null;
   const updated: Order = {
@@ -396,6 +628,17 @@ export function staticRequestExchange(orderId: string, reason: string): Order | 
     updatedAt: new Date().toISOString(),
   };
   saveStaticOrder(updated);
+  if (auth.currentUser?.emailVerified) {
+    try {
+      await updateDoc(doc(db, 'orders', orderId), {
+        exchangeRequested: true,
+        exchangeReason: reason.slice(0, 500),
+        updatedAt: serverTimestamp(),
+      });
+    } catch {
+      // Saved locally already
+    }
+  }
   return updated;
 }
 
@@ -422,34 +665,24 @@ export function staticTrackOrder(
 export async function staticGetAccountOrders(user: AuthUser): Promise<Order[]> {
   const all = getStaticOrders();
   const email = user.email.toLowerCase();
-  const matched = all.filter(
+  const localMatched = all.filter(
     (o) => o.userId === user.uid || o.customerEmail.toLowerCase() === email
   );
+  const remoteMatched: Order[] = [];
 
   if (auth.currentUser?.emailVerified) {
     try {
       const q = query(collection(db, 'orders'), where('userId', '==', auth.currentUser.uid));
       const snap = await getDocs(q);
       for (const d of snap.docs) {
-        const data = d.data() as Order;
-        if (!matched.some((m) => m.id === data.id)) {
-          matched.push({
-            ...data,
-            gstAmount: data.gstAmount ?? calculateGstBreakdown(data.items || [], 0),
-            deliveryMethod: data.deliveryMethod || 'standard',
-            createdAt: typeof data.createdAt === 'string' ? data.createdAt : new Date().toISOString(),
-            updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : new Date().toISOString(),
-          });
-        }
+        remoteMatched.push(normalizeFirestoreOrder(d.data() as Record<string, unknown>));
       }
     } catch {
       // Ignore offline/index issues
     }
   }
 
-  return matched.sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
+  return mergeOrdersList(localMatched, remoteMatched);
 }
 
 export async function staticSubmitReview(
@@ -584,27 +817,31 @@ export function staticAdminUpdateOrder(
   orderId: string,
   status: OrderStatus,
   trackingNumber?: string
-): void {
+): Order | undefined {
   const order = getStaticOrders().find((o) => o.id === orderId);
-  if (!order) return;
-  saveStaticOrder({
+  if (!order) return undefined;
+  const updated: Order = {
     ...order,
     status,
     trackingNumber: trackingNumber !== undefined ? trackingNumber : order.trackingNumber,
     updatedAt: new Date().toISOString(),
-  });
+  };
+  saveStaticOrder(updated);
+  return updated;
 }
 
-export function staticAdminRefundOrder(orderId: string): void {
+export function staticAdminRefundOrder(orderId: string): Order | undefined {
   const order = getStaticOrders().find((o) => o.id === orderId);
-  if (!order) return;
-  saveStaticOrder({
+  if (!order) return undefined;
+  const updated: Order = {
     ...order,
     status: 'returned',
     refundId: `rfnd_static_${Date.now().toString(36)}`,
     refundAmount: order.total,
     updatedAt: new Date().toISOString(),
-  });
+  };
+  saveStaticOrder(updated);
+  return updated;
 }
 
 export function staticAdminUpsertProduct(product: Product): void {
@@ -626,9 +863,10 @@ export function staticAdminSaveCoupons(coupons: Coupon[]): void {
   writeJson(COUPONS_KEY, coupons);
 }
 
-export function staticAdminOrdersCsv(): string {
+export function staticAdminOrdersCsv(ordersInput?: Order[]): string {
+  const orders = ordersInput || getStaticOrders();
   const header = 'Order ID,Customer Name,Email,Total INR,Status,Payment,Created At';
-  const rows = getStaticOrders().map((o) =>
+  const rows = orders.map((o) =>
     [
       o.id,
       `"${o.shippingAddress.fullName.replace(/"/g, '""')}"`,

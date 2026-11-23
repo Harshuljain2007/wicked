@@ -118,28 +118,37 @@ service cloud.firestore {
       return data.keys().hasAll(['id', 'userId', 'status', 'paymentMethod', 'total', 'subtotal', 'shippingFee', 'discount', 'items', 'shippingAddress', 'createdAt', 'updatedAt']) &&
         data.keys().hasOnly([
           'id', 'userId', 'customerEmail', 'customerPhone', 'status', 'paymentMethod',
-          'razorpayOrderId', 'razorpayPaymentId', 'total', 'subtotal', 'shippingFee',
-          'discount', 'couponCode', 'items', 'shippingAddress', 'trackingNumber',
-          'exchangeRequested', 'exchangeReason', 'createdAt', 'updatedAt'
+          'deliveryMethod', 'razorpayOrderId', 'razorpayPaymentId', 'total', 'subtotal',
+          'shippingFee', 'discount', 'gstAmount', 'couponCode', 'giftNote', 'gstin',
+          'items', 'shippingAddress', 'trackingNumber', 'exchangeRequested',
+          'exchangeReason', 'refundId', 'refundAmount', 'createdAt', 'updatedAt'
         ]) &&
         data.id == orderId &&
         isValidId(data.userId) &&
         data.status in ['placed', 'paid', 'packed', 'shipped', 'delivered', 'cancelled', 'returned'] &&
         data.paymentMethod in ['razorpay', 'cod'] &&
+        (!('deliveryMethod' in data) || data.deliveryMethod in ['standard', 'express']) &&
         data.total is number && data.total >= 0 &&
         data.subtotal is number && data.subtotal >= 0 &&
         data.shippingFee is number && data.shippingFee >= 0 &&
         data.discount is number && data.discount >= 0 &&
+        (!('gstAmount' in data) || (data.gstAmount is number && data.gstAmount >= 0)) &&
         data.items is list && data.items.size() >= 1 && data.items.size() <= 50 &&
+        data.items[0] is map &&
         data.shippingAddress is map &&
+        data.shippingAddress.keys().hasAll(['fullName', 'email', 'phone', 'line1', 'city', 'state', 'pincode']) &&
         (!('customerEmail' in data) || (data.customerEmail is string && data.customerEmail.size() <= 180)) &&
         (!('customerPhone' in data) || (data.customerPhone is string && data.customerPhone.size() <= 20)) &&
         (!('razorpayOrderId' in data) || (data.razorpayOrderId is string && data.razorpayOrderId.size() <= 100)) &&
         (!('razorpayPaymentId' in data) || (data.razorpayPaymentId is string && data.razorpayPaymentId.size() <= 100)) &&
         (!('couponCode' in data) || (data.couponCode is string && data.couponCode.size() <= 32)) &&
+        (!('giftNote' in data) || (data.giftNote is string && data.giftNote.size() <= 240)) &&
+        (!('gstin' in data) || (data.gstin is string && data.gstin.size() <= 15)) &&
         (!('trackingNumber' in data) || (data.trackingNumber is string && data.trackingNumber.size() <= 80)) &&
         (!('exchangeRequested' in data) || data.exchangeRequested is bool) &&
         (!('exchangeReason' in data) || (data.exchangeReason is string && data.exchangeReason.size() <= 500)) &&
+        (!('refundId' in data) || (data.refundId is string && data.refundId.size() <= 100)) &&
+        (!('refundAmount' in data) || (data.refundAmount is number && data.refundAmount >= 0)) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
     }
@@ -234,11 +243,16 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow get: if isValidId(orderId) && (isAdmin() || (isVerifiedUser() && existing().userId == request.auth.uid));
       allow list: if isAdmin() || (isVerifiedUser() && resource.data.userId == request.auth.uid);
-      allow create: if isVerifiedUser() && isValidId(orderId) && isValidOrder(incoming(), orderId) &&
-        incoming().userId == request.auth.uid &&
-        incoming().status == 'placed' &&
+      allow create: if isValidId(orderId) && isValidOrder(incoming(), orderId) &&
         incoming().createdAt == request.time &&
-        incoming().updatedAt == request.time;
+        incoming().updatedAt == request.time && (
+          isAdmin() || (
+            incoming().status in ['placed', 'paid'] && (
+              (isVerifiedUser() && incoming().userId == request.auth.uid) ||
+              incoming().userId.matches('^(guest|otp)_[a-zA-Z0-9_\\-]+$')
+            )
+          )
+        );
       allow update: if isValidId(orderId) && isValidOrder(incoming(), orderId) &&
         incoming().id == existing().id &&
         incoming().userId == existing().userId &&
@@ -246,10 +260,14 @@ service cloud.firestore {
           isAdmin() || (
             isVerifiedUser() &&
             existing().userId == request.auth.uid &&
-            existing().status == 'delivered' &&
-            incoming().status == 'delivered' &&
-            incoming().updatedAt == request.time &&
-            incoming().diff(existing()).affectedKeys().hasOnly(['exchangeRequested', 'exchangeReason', 'updatedAt'])
+            incoming().updatedAt == request.time && (
+              (existing().status == 'placed' &&
+                incoming().status == 'paid' &&
+                incoming().diff(existing()).affectedKeys().hasOnly(['status', 'razorpayPaymentId', 'updatedAt'])) ||
+              (existing().status == 'delivered' &&
+                incoming().status == 'delivered' &&
+                incoming().diff(existing()).affectedKeys().hasOnly(['exchangeRequested', 'exchangeReason', 'updatedAt']))
+            )
           )
         );
       allow delete: if false;

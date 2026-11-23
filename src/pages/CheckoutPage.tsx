@@ -6,9 +6,12 @@ import { useAuth } from '../hooks/useAuth';
 import { useBag } from '../hooks/useBag';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
 import {
+  saveStaticOrder,
   staticCreateOrder,
   staticSandboxAuthorize,
   staticVerifyPayment,
+  syncOrderPaymentToFirestore,
+  syncOrderToFirestore,
   tryApiJson,
 } from '../lib/staticStore';
 import type { Order } from '../types';
@@ -142,12 +145,19 @@ export function CheckoutPage() {
         if (!api.ok || !api.data.verified || !api.data.order) {
           throw new Error(api.data.error || 'Payment verification failed. Please try again.');
         }
+        saveStaticOrder(api.data.order);
+        await syncOrderPaymentToFirestore(
+          api.data.order.id,
+          payload.razorpay_order_id,
+          payload.razorpay_payment_id,
+          api.data.order
+        );
         clearBag();
         navigate(`/order/${api.data.order.id}?token=${encodeURIComponent(api.data.orderToken || '')}`);
         return;
       }
 
-      const verified = staticVerifyPayment({
+      const verified = await staticVerifyPayment({
         orderId: payload.orderId,
         razorpay_order_id: payload.razorpay_order_id,
         razorpay_payment_id: payload.razorpay_payment_id,
@@ -211,6 +221,7 @@ export function CheckoutPage() {
         );
         if (api.available) {
           if (!api.ok || !api.data.order) throw new Error(api.data.error || 'Unable to place COD order.');
+          await syncOrderToFirestore(api.data.order);
           clearBag();
           navigate(`/order/${api.data.order.id}?token=${encodeURIComponent(api.data.orderToken || '')}`);
           return;

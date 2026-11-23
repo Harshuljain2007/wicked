@@ -40,12 +40,8 @@ export function OrderConfirmationPage() {
       const api = await tryApiJson<{ order?: Order; error?: string }>(url, { headers });
       if (!active) return;
 
-      if (api.available) {
-        if (!api.ok || !api.data.order) {
-          setError(api.data.error || 'Could not load order.');
-        } else {
-          setOrder(api.data.order);
-        }
+      if (api.available && api.ok && api.data.order) {
+        setOrder(api.data.order);
         setLoading(false);
         return;
       }
@@ -53,7 +49,7 @@ export function OrderConfirmationPage() {
       const fallbackOrder = await staticGetOrder(id || '', tokenParam, user);
       if (!active) return;
       if (!fallbackOrder) {
-        setError('Could not locate this order in this browser session.');
+        setError((api.available && api.data.error) || 'Could not locate this order.');
       } else {
         setOrder(fallbackOrder);
       }
@@ -92,7 +88,7 @@ export function OrderConfirmationPage() {
       return;
     }
 
-    const updated = staticRequestExchange(order.id, exchangeReason.trim());
+    const updated = await staticRequestExchange(order.id, exchangeReason.trim());
     if (!updated) {
       setExchangeFeedback('Could not submit exchange request.');
       return;

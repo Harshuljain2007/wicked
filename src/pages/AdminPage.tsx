@@ -1,9 +1,13 @@
-import { AlertTriangle, Download, LogOut, Plus, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { AlertTriangle, Download, LogOut, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { IMG_TEE_SAGE, SEED_SHOWCASE } from '../data/seedData';
+import { auth } from '../firebase';
 import { useAuth } from '../hooks/useAuth';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
 import {
+  fetchAdminOrdersFromFirestore,
+  mergeOrdersList,
+  saveStaticOrder,
   staticAdminDeleteProduct,
   staticAdminOrdersCsv,
   staticAdminRefundOrder,
@@ -12,6 +16,8 @@ import {
   staticAdminUpdateOrder,
   staticAdminUpsertProduct,
   staticGetAdminDashboard,
+  subscribeAdminOrders,
+  syncAdminOrderUpdateToFirestore,
   tryApiJson,
 } from '../lib/staticStore';
 import type { BannerConfig, Coupon, Order, OrderStatus, Product, ShowcaseData } from '../types';
@@ -43,6 +49,8 @@ export function AdminPage() {
   const { user, signInWithGoogle, signOut, getAuthToken } = useAuth();
   const [tab, setTab] = useState<'orders' | 'products' | 'merchandising'>('orders');
   const [data, setData] = useState<DashboardResponse | null>(null);
+  const [firestoreOrders, setFirestoreOrders] = useState<Order[]>([]);
+  const [syncingOrders, setSyncingOrders] = useState(false);
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [toast, setToast] = useState('');
@@ -105,6 +113,47 @@ export function AdminPage() {
     }
   }, [user, loadDashboard]);
 
+  useEffect(() => {
+    if (!user?.isAdmin || !auth.currentUser?.emailVerified) {
+      setFirestoreOrders([]);
+      return;
+    }
+    const unsub = subscribeAdminOrders(
+      (remoteOrders) => {
+        setFirestoreOrders(remoteOrders);
+        for (const o of remoteOrders) {
+          saveStaticOrder(o);
+        }
+      },
+      (err) => {
+        setToast(`Firestore sync notice: ${err.message}`);
+      }
+    );
+    return () => unsub();
+  }, [user]);
+
+  const mergedOrders = useMemo(
+    () => mergeOrdersList(data?.orders || [], firestoreOrders),
+    [data?.orders, firestoreOrders]
+  );
+
+  const computedStats = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const todaysOrdersCount = mergedOrders.filter(
+      (o) => (o.createdAt || '').slice(0, 10) === today
+    ).length;
+    const totalRevenue = mergedOrders
+      .filter((o) => o.status !== 'cancelled' && o.status !== 'returned')
+      .reduce((sum, o) => sum + o.total, 0);
+    return {
+      totalOrders: mergedOrders.length,
+      todaysOrdersCount,
+      totalRevenue,
+      lowStockCount: data?.stats.lowStockCount ?? 0,
+      productCount: data?.stats.productCount ?? 0,
+    };
+  }, [mergedOrders, data?.stats]);
+
   if (!user) {
     return (
       <div className="max-w-md mx-auto px-4 py-20 text-center">
@@ -160,9 +209,27 @@ export function AdminPage() {
     );
   }
 
+  const handleManualSync = async () => {
+    setSyncingOrders(true);
+    try {
+      await loadDashboard();
+      if (auth.currentUser?.emailVerified) {
+        const remote = await fetchAdminOrdersFromFirestore();
+        setFirestoreOrders(remote);
+        for (const o of remote) saveStaticOrder(o);
+      }
+      setToast('Orders synced from Firestore and store backend.');
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Unable to sync orders.');
+    } finally {
+      setSyncingOrders(false);
+    }
+  };
+
   const handleUpdateOrder = async (orderId: string, status: OrderStatus, trackingNumber?: string) => {
     const token = await getAuthToken();
     if (!token) return;
+    const targetOrder = mergedOrders.find((o) => o.id === orderId);
     const api = await tryApiJson(`/api/admin/orders/${encodeURIComponent(orderId)}`, {
       method: 'PATCH',
       headers: {
@@ -171,22 +238,35 @@ export function AdminPage() {
       },
       body: JSON.stringify({ status, trackingNumber }),
     });
-    if (api.available) {
-      if (api.ok) {
-        setToast(`Order ${orderId} updated to ${status}`);
-        loadDashboard();
+    if (api.available && api.ok) {
+      staticAdminUpdateOrder(orderId, status, trackingNumber);
+      try {
+        await syncAdminOrderUpdateToFirestore(orderId, { status, trackingNumber }, targetOrder);
+      } catch {
+        // Already updated on server
       }
+      setToast(`Order ${orderId} updated to ${status}`);
+      loadDashboard();
       return;
     }
-    staticAdminUpdateOrder(orderId, status, trackingNumber);
-    setToast(`Order ${orderId} updated to ${status}`);
+    const updatedLocal = staticAdminUpdateOrder(orderId, status, trackingNumber);
+    try {
+      await syncAdminOrderUpdateToFirestore(
+        orderId,
+        { status, trackingNumber },
+        updatedLocal || targetOrder
+      );
+      setToast(`Order ${orderId} updated to ${status}`);
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Failed to sync order update.');
+    }
     loadDashboard();
   };
 
   const handleRefundOrder = async (order: Order) => {
     const token = await getAuthToken();
     if (!token) return;
-    const api = await tryApiJson<{ error?: string }>(
+    const api = await tryApiJson<{ error?: string; order?: Order }>(
       `/api/admin/orders/${encodeURIComponent(order.id)}/refund`,
       {
         method: 'POST',
@@ -197,8 +277,22 @@ export function AdminPage() {
         body: JSON.stringify({ amountInr: order.total, reason: 'Admin issued refund' }),
       }
     );
-    if (api.available) {
+    if (api.available && api.status !== 404) {
       if (api.ok) {
+        staticAdminRefundOrder(order.id);
+        try {
+          await syncAdminOrderUpdateToFirestore(
+            order.id,
+            {
+              status: 'returned',
+              refundId: api.data.order?.refundId,
+              refundAmount: order.total,
+            },
+            api.data.order || order
+          );
+        } catch {
+          // Server refund already recorded
+        }
         setToast(`Refund issued for ${order.id} (₹${order.total.toLocaleString('en-IN')})`);
         loadDashboard();
       } else {
@@ -206,28 +300,28 @@ export function AdminPage() {
       }
       return;
     }
-    staticAdminRefundOrder(order.id);
-    setToast(`Refund issued for ${order.id} (₹${order.total.toLocaleString('en-IN')})`);
+    const refunded = staticAdminRefundOrder(order.id);
+    try {
+      await syncAdminOrderUpdateToFirestore(
+        order.id,
+        {
+          status: 'returned',
+          refundId: refunded?.refundId,
+          refundAmount: order.total,
+        },
+        refunded || order
+      );
+      setToast(`Refund issued for ${order.id} (₹${order.total.toLocaleString('en-IN')})`);
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'Failed to sync refund.');
+    }
     loadDashboard();
   };
 
   const handleExportCsv = async () => {
-    const token = await getAuthToken();
-    if (!token) return;
-    let blob: Blob;
-    try {
-      const res = await fetch('/api/admin/orders/export.csv', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const ct = res.headers.get('content-type') || '';
-      if (res.ok && ct.includes('text/csv')) {
-        blob = await res.blob();
-      } else {
-        blob = new Blob([staticAdminOrdersCsv()], { type: 'text/csv;charset=utf-8;' });
-      }
-    } catch {
-      blob = new Blob([staticAdminOrdersCsv()], { type: 'text/csv;charset=utf-8;' });
-    }
+    const blob = new Blob([staticAdminOrdersCsv(mergedOrders)], {
+      type: 'text/csv;charset=utf-8;',
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -377,7 +471,7 @@ export function AdminPage() {
     }
   };
 
-  const orders = (data?.orders || []).filter(
+  const orders = mergedOrders.filter(
     (o) => statusFilter === 'all' || o.status === statusFilter
   );
 
@@ -435,25 +529,25 @@ export function AdminPage() {
         <div className="p-5 rounded-lg bg-[#FCFBF7] border border-[#C5D1B8]">
           <p className="text-xs text-[#4D5A48]">Today&apos;s Orders</p>
           <p className="font-display text-3xl font-bold mt-1 tabular-nums">
-            {data?.stats.todaysOrdersCount ?? 0}
+            {computedStats.todaysOrdersCount}
           </p>
         </div>
         <div className="p-5 rounded-lg bg-[#FCFBF7] border border-[#C5D1B8]">
           <p className="text-xs text-[#4D5A48]">Total Revenue</p>
           <p className="font-display text-3xl font-bold mt-1 tabular-nums">
-            ₹{(data?.stats.totalRevenue ?? 0).toLocaleString('en-IN')}
+            ₹{computedStats.totalRevenue.toLocaleString('en-IN')}
           </p>
         </div>
         <div className="p-5 rounded-lg bg-[#FCFBF7] border border-[#C5D1B8]">
-          <p className="text-xs text-[#4D5A48]">Catalog Products</p>
+          <p className="text-xs text-[#4D5A48]">Total Synced Orders</p>
           <p className="font-display text-3xl font-bold mt-1 tabular-nums">
-            {data?.stats.productCount ?? 0}
+            {computedStats.totalOrders}
           </p>
         </div>
         <div className="p-5 rounded-lg bg-[#FCFBF7] border border-[#C5D1B8]">
           <p className="text-xs text-[#4D5A48]">Low-Stock Alerts</p>
           <p className="font-display text-3xl font-bold mt-1 tabular-nums">
-            {data?.stats.lowStockCount ?? 0}
+            {computedStats.lowStockCount}
           </p>
         </div>
       </div>
@@ -495,14 +589,25 @@ export function AdminPage() {
               ))}
             </div>
 
-            <button
-              type="button"
-              onClick={handleExportCsv}
-              className="px-4 py-2 rounded-md bg-[#E7ECE0] border border-[#C5D1B8] text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-[#9CAF88]"
-            >
-              <Download className="w-4 h-4" />
-              <span>Export CSV</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleManualSync}
+                disabled={syncingOrders}
+                className="px-4 py-2 rounded-md bg-[#E7ECE0] border border-[#C5D1B8] text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-[#9CAF88] disabled:opacity-60"
+              >
+                <RefreshCw className={`w-4 h-4 ${syncingOrders ? 'animate-spin' : ''}`} />
+                <span>{syncingOrders ? 'Syncing...' : 'Sync Orders'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleExportCsv}
+                className="px-4 py-2 rounded-md bg-[#E7ECE0] border border-[#C5D1B8] text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-[#9CAF88]"
+              >
+                <Download className="w-4 h-4" />
+                <span>Export CSV</span>
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto border border-[#C5D1B8] rounded-lg bg-[#FCFBF7]">
@@ -520,10 +625,18 @@ export function AdminPage() {
               <tbody className="divide-y divide-[#CFD9C3] tabular-nums">
                 {orders.map((o) => (
                   <tr key={o.id}>
-                    <td className="py-3 px-4 font-semibold">{o.id}</td>
+                    <td className="py-3 px-4">
+                      <p className="font-semibold">{o.id}</p>
+                      <p className="text-[11px] text-[#4D5A48]">
+                        {new Date(o.createdAt).toLocaleDateString('en-IN')} · {o.paymentMethod.toUpperCase()}
+                      </p>
+                    </td>
                     <td className="py-3 px-4">
                       <p className="font-medium">{o.shippingAddress.fullName}</p>
                       <p className="text-xs text-[#4D5A48]">{o.customerEmail}</p>
+                      {o.customerPhone && (
+                        <p className="text-xs text-[#4D5A48] tabular-nums">{o.customerPhone}</p>
+                      )}
                     </td>
                     <td className="py-3 px-4 font-semibold">₹{o.total.toLocaleString('en-IN')}</td>
                     <td className="py-3 px-4">
