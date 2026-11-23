@@ -317,5 +317,8 @@ adminRouter.post('/sms/send', async (req: AuthenticatedRequest, res) => {
     orderId: parsed.data.orderId,
     createdBy: req.user?.email || 'admin',
   });
-  res.status(log.status === 'failed' ? 502 : 200).json({ log });
+  res.status(log.status === 'failed' ? 502 : 200).json({
+    log,
+    ...(log.status === 'failed' ? { error: log.error || 'SMS gateway rejected delivery.' } : {}),
+  });
 });

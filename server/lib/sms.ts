@@ -128,23 +128,60 @@ export async function sendSms(params: {
   if (provider === 'fast2sms') {
     try {
       const localTen = normalized.replace(/\D/g, '').slice(-10);
-      const res = await fetch('https://www.fast2sms.com/dev/bulkV2', {
-        method: 'POST',
-        headers: {
-          authorization: SERVER_CONFIG.fast2smsApiKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          route: 'q',
-          sender_id: SERVER_CONFIG.fast2smsSenderId,
-          message: cleanMsg,
-          language: 'english',
-          flash: 0,
-          numbers: localTen,
-        }),
+      const sendViaFast2Sms = async (bodyPayload: Record<string, unknown>) => {
+        const res = await fetch('https://www.fast2sms.com/dev/bulkV2', {
+          method: 'POST',
+          headers: {
+            authorization: SERVER_CONFIG.fast2smsApiKey,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify(bodyPayload),
+        });
+        const rawText = await res.text();
+        let parsedJson: { return?: boolean; message?: string | string[]; status_code?: number } | null =
+          null;
+        try {
+          parsedJson = JSON.parse(rawText);
+        } catch {
+          parsedJson = null;
+        }
+        const ok = res.ok && parsedJson?.return !== false;
+        const msgText = Array.isArray(parsedJson?.message)
+          ? parsedJson.message.join(', ')
+          : parsedJson?.message || rawText;
+        return { ok, status: res.status, msgText };
+      };
+
+      // Fast2SMS Quick SMS ('q') does not accept sender_id or language
+      let result = await sendViaFast2Sms({
+        route: 'q',
+        message: cleanMsg,
+        flash: 0,
+        numbers: localTen,
       });
-      if (!res.ok) {
-        const text = await res.text();
+
+      // Fallback to Fast2SMS OTP route if Quick SMS is disabled for OTP traffic on the account
+      if (!result.ok && params.event === 'otp') {
+        const otpDigits = cleanMsg.match(/\b(\d{4,8})\b/)?.[1];
+        if (otpDigits) {
+          const otpAttempt = await sendViaFast2Sms({
+            route: 'otp',
+            variables_values: otpDigits,
+            flash: 0,
+            numbers: localTen,
+          });
+          if (otpAttempt.ok) {
+            result = otpAttempt;
+          } else {
+            result.msgText = `${result.msgText} (OTP route: ${otpAttempt.msgText})`;
+          }
+        }
+      }
+
+      if (!result.ok) {
+        const errMsg = `Fast2SMS HTTP ${result.status}: ${String(result.msgText).slice(0, 320)}`;
+        console.error('[WICKED FAST2SMS ERROR]', errMsg);
         return recordSmsLog({
           id,
           orderId: params.orderId,
@@ -153,7 +190,7 @@ export async function sendSms(params: {
           event: params.event,
           provider: 'fast2sms',
           status: 'failed',
-          error: `Fast2SMS HTTP ${res.status}: ${text.slice(0, 120)}`,
+          error: errMsg,
           createdBy,
           createdAt,
         });
@@ -170,6 +207,8 @@ export async function sendSms(params: {
         createdAt,
       });
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Fast2SMS request failed.';
+      console.error('[WICKED FAST2SMS EXCEPTION]', errMsg);
       return recordSmsLog({
         id,
         orderId: params.orderId,
@@ -178,7 +217,7 @@ export async function sendSms(params: {
         event: params.event,
         provider: 'fast2sms',
         status: 'failed',
-        error: err instanceof Error ? err.message : 'Fast2SMS request failed.',
+        error: errMsg,
         createdBy,
         createdAt,
       });

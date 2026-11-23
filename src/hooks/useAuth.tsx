@@ -58,7 +58,16 @@ interface AuthContextValue {
   signInWithGoogle: () => Promise<void>;
   requestOtp: (email: string) => Promise<{ previewCode?: string; message: string }>;
   verifyOtp: (email: string, code: string) => Promise<void>;
-  requestSmsOtp: (phone: string) => Promise<{ phone: string; previewCode?: string; message: string }>;
+  requestSmsOtp: (
+    phone: string
+  ) => Promise<{
+    sent?: boolean;
+    phone: string;
+    previewCode?: string;
+    message: string;
+    gatewayError?: string;
+    provider?: string;
+  }>;
   verifySmsOtp: (phone: string, code: string) => Promise<void>;
   signOut: () => Promise<void>;
   getAuthToken: () => Promise<string | null>;
@@ -196,10 +205,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const requestSmsOtp = useCallback(async (phone: string) => {
     const api = await tryApiJson<{
+      sent?: boolean;
       phone?: string;
       previewCode?: string;
       message?: string;
       error?: string;
+      gatewayError?: string;
+      provider?: string;
     }>('/api/auth/sms-otp/request', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -208,9 +220,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (api.available) {
       if (!api.ok) throw new Error(api.data.error || 'Could not send SMS verification code.');
       return {
+        sent: api.data.sent !== false,
         phone: api.data.phone || phone,
         previewCode: api.data.previewCode,
         message: api.data.message || 'SMS verification code sent.',
+        gatewayError: api.data.gatewayError,
+        provider: api.data.provider,
       };
     }
     return staticRequestSmsOtp(phone);

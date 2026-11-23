@@ -22,6 +22,7 @@ export function LoginPanel({
   const [otpCode, setOtpCode] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [previewOtp, setPreviewOtp] = useState('');
+  const [otpNotice, setOtpNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [authError, setAuthError] = useState('');
 
@@ -38,9 +39,10 @@ export function LoginPanel({
     }
   };
 
-  const handleRequestOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleRequestOtp = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     setAuthError('');
+    setOtpNotice('');
     setBusy(true);
     try {
       if (otpChannel === 'sms') {
@@ -48,10 +50,16 @@ export function LoginPanel({
         setOtpPhone(res.phone);
         setOtpSent(true);
         setPreviewOtp(res.previewCode || '');
+        if (res.gatewayError) {
+          setAuthError(`${res.message} (${res.gatewayError})`);
+        } else {
+          setOtpNotice(res.message);
+        }
       } else {
         const res = await requestOtp(otpEmail);
         setOtpSent(true);
         setPreviewOtp(res.previewCode || '');
+        setOtpNotice(res.message);
       }
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : 'Failed to send verification code.');
@@ -83,6 +91,7 @@ export function LoginPanel({
     setOtpSent(false);
     setOtpCode('');
     setPreviewOtp('');
+    setOtpNotice('');
     setAuthError('');
   };
 
@@ -158,11 +167,18 @@ export function LoginPanel({
               disabled={busy}
               className="w-full py-2.5 px-4 rounded-md bg-[#E7ECE0] border border-[#C5D1B8] font-semibold text-sm text-[#1F2A1C] hover:bg-[#9CAF88] transition-colors min-h-[44px]"
             >
-              {otpChannel === 'sms' ? 'Send 6-Digit SMS Code' : 'Send 6-Digit Email Code'}
+              {busy
+                ? 'Sending...'
+                : otpChannel === 'sms'
+                  ? 'Send 6-Digit SMS Code'
+                  : 'Send 6-Digit Email Code'}
             </button>
           </form>
         ) : (
           <form onSubmit={handleVerifyOtp} className="space-y-3">
+            {otpNotice && (
+              <p className="text-xs text-[#4D5A48]">{otpNotice}</p>
+            )}
             {previewOtp && (
               <p className="text-xs bg-[#E7ECE0] p-2.5 rounded border border-[#C5D1B8] text-[#1F2A1C]">
                 Preview {otpChannel === 'sms' ? 'SMS' : 'OTP'} code:{' '}
@@ -190,10 +206,19 @@ export function LoginPanel({
               </button>
               <button
                 type="button"
+                disabled={busy}
+                onClick={() => void handleRequestOtp()}
+                className="px-3 py-2.5 rounded-md bg-[#E7ECE0] border border-[#C5D1B8] text-xs font-semibold text-[#1F2A1C]"
+              >
+                Resend
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   setOtpSent(false);
                   setOtpCode('');
                   setPreviewOtp('');
+                  setOtpNotice('');
                 }}
                 className="px-3 py-2.5 rounded-md bg-[#E7ECE0] border border-[#C5D1B8] text-xs font-semibold text-[#1F2A1C]"
               >
@@ -202,7 +227,11 @@ export function LoginPanel({
             </div>
           </form>
         )}
-        {authError && <p className="text-xs text-[#4D5A48] mt-3">{authError}</p>}
+        {authError && (
+          <p className="text-xs text-[#E8412C] bg-[#F7F5EF] border border-[#E8412C]/30 rounded px-3 py-2 mt-3">
+            {authError}
+          </p>
+        )}
       </div>
 
       {onContinueAsGuest && (

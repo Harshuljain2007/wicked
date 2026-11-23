@@ -37,13 +37,11 @@ authRouter.post('/otp/request', authRateLimiter, (req, res) => {
     return;
   }
   const { code, expiresInSeconds } = createEmailOtp(parsed.data.email);
-  const isDevPreview = process.env.NODE_ENV !== 'production';
   res.json({
     sent: true,
     expiresInSeconds,
-    message: `Verification code sent to ${parsed.data.email}.`,
-    // In local/preview mode without an external SMTP relay, return previewCode so the OTP flow can be tested cleanly.
-    ...(isDevPreview ? { previewCode: code } : {}),
+    message: `Preview verification code ready for ${parsed.data.email}.`,
+    previewCode: code,
   });
 });
 
@@ -88,17 +86,21 @@ authRouter.post('/sms-otp/request', authRateLimiter, async (req, res) => {
     event: 'otp',
     createdBy: 'auth',
   });
-  const isSandboxOrDev = getSmsGatewayProvider() === 'sandbox' || process.env.NODE_ENV !== 'production';
+  const gateway = getSmsGatewayProvider();
+  const showPreview = gateway === 'sandbox' || log.status !== 'sent' || process.env.NODE_ENV !== 'production';
   res.json({
-    sent: log.status !== 'failed',
+    sent: log.status === 'sent' || log.status === 'simulated',
     phone: normalizedPhone,
     expiresInSeconds,
     provider: log.provider,
+    gatewayError: log.status === 'failed' ? log.error : undefined,
     message:
       log.status === 'sent'
         ? `6-digit SMS code sent to ${normalizedPhone}.`
-        : `6-digit SMS code ready for ${normalizedPhone}.`,
-    ...(isSandboxOrDev ? { previewCode: code } : {}),
+        : log.status === 'simulated'
+          ? `Sandbox SMS code generated for ${normalizedPhone}.`
+          : `SMS carrier could not deliver to ${normalizedPhone}.`,
+    ...(showPreview ? { previewCode: code } : {}),
   });
 });
 

@@ -359,7 +359,7 @@ export function AdminPage() {
         });
         if (api.available) {
           if (!api.ok || !api.data.log) {
-            throw new Error(api.data.error || 'Unable to send SMS.');
+            throw new Error(api.data.error || api.data.log?.error || 'Unable to send SMS.');
           }
           saveStaticSmsLog(api.data.log);
           setApiSmsLogs((prev) => [api.data.log!, ...prev]);
