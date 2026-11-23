@@ -11,7 +11,7 @@ import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useBag } from '../hooks/useBag';
 import { useReducedMotion } from '../hooks/useReducedMotion';
-import { useSmoothWheelScroll } from '../hooks/useSmoothWheelScroll';
+import { smoothScrollToTop, useSmoothWheelScroll } from '../hooks/useSmoothWheelScroll';
 import { BagDrawer } from './BagDrawer';
 import { ClickMotionLayer } from './ClickMotionLayer';
 import { FlyToBagOverlay } from './FlyToBagOverlay';
@@ -280,7 +280,7 @@ export function Layout({ children }: { children: ReactNode }) {
             exit={shouldSimplify ? { opacity: 0 } : { opacity: 0, y: 14, scale: 0.9 }}
             whileTap={shouldSimplify ? undefined : { scale: 0.9 }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-            onClick={() => window.scrollTo({ top: 0, behavior: shouldSimplify ? 'auto' : 'smooth' })}
+            onClick={() => smoothScrollToTop(shouldSimplify)}
             aria-label="Scroll back to top"
             className="hidden md:flex fixed bottom-6 right-6 z-30 w-11 h-11 rounded-full bg-[#9CAF88] border border-[#7F956B] text-[#1F2A1C] items-center justify-center hover:bg-[#8EA379] shadow-sm"
           >

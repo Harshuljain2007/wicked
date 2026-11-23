@@ -24,7 +24,7 @@
     color: var(--color-ink);
     font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
-    scroll-behavior: smooth;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   body {
@@ -32,6 +32,7 @@
     color: var(--color-ink);
     margin: 0;
     overflow-x: hidden;
+    overscroll-behavior-y: none;
   }
 
   h1, h2, h3, h4, .font-display {

@@ -48,7 +48,7 @@ export function ProductCard({ product }: ProductCardProps) {
   return (
     <>
       <article
-        className="group bg-[#FCFBF7] border border-[#C5D1B8] rounded-lg overflow-hidden flex flex-col transition-transform duration-200 hover:-translate-y-0.5"
+        className="group bg-[#FCFBF7] border border-[#C5D1B8] rounded-lg overflow-hidden flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-0.5"
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
@@ -69,13 +69,14 @@ export function ProductCard({ product }: ProductCardProps) {
                   width={600}
                   height={800}
                   loading="lazy"
+                  decoding="async"
                   referrerPolicy="no-referrer"
                   onError={() => setImgError(true)}
-                  className={`w-full h-full object-cover transition-all duration-300 ${
+                  className={`w-full h-full object-cover transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
                     hovered && secondaryImage !== primaryImage
                       ? 'opacity-0 scale-[1.03]'
                       : hovered
-                      ? 'scale-[1.03]'
+                      ? 'scale-[1.035]'
                       : 'opacity-100 scale-100'
                   }`}
                 />
@@ -86,9 +87,10 @@ export function ProductCard({ product }: ProductCardProps) {
                     width={600}
                     height={800}
                     loading="lazy"
+                    decoding="async"
                     referrerPolicy="no-referrer"
-                    className={`absolute inset-0 w-full h-full object-cover transition-all duration-300 ${
-                      hovered ? 'opacity-100 scale-[1.03]' : 'opacity-0 scale-100'
+                    className={`absolute inset-0 w-full h-full object-cover transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                      hovered ? 'opacity-100 scale-[1.035]' : 'opacity-0 scale-100'
                     }`}
                   />
                 )}

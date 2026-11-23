@@ -29,7 +29,7 @@ import type {
 } from '../types';
 
 const ORDERS_KEY = 'wicked_static_orders_v1';
-const PRODUCTS_KEY = 'wicked_static_products_v1';
+const PRODUCTS_KEY = 'wicked_static_products_v2';
 const COUPONS_KEY = 'wicked_static_coupons_v1';
 const BANNER_KEY = 'wicked_static_banner_v1';
 const REVIEWS_KEY = 'wicked_static_reviews_v1';

@@ -4,12 +4,14 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ProductCard } from '../components/ProductCard';
 import {
-  IMG_ACCESSORY_SLING,
-  IMG_BOTTOMS_SAND,
-  IMG_HOODIE_FRONT,
-  IMG_KURTA_SAGE,
-  IMG_SHIRT_OFFWHITE,
-  IMG_TEE_SAGE,
+  IMG_ACC_TOTE,
+  IMG_BOTTOMS_CARGO,
+  IMG_HOODIE_SIDE,
+  IMG_HOODIE_ZIP,
+  IMG_KURTA_SHORT,
+  IMG_KURTA_TUNIC,
+  IMG_SHIRT_LINEN,
+  IMG_TEE_CROPPED,
   SEED_BANNER,
   SEED_PRODUCTS,
   SEED_SHOWCASE,
@@ -81,12 +83,12 @@ export function HomePage() {
   const recentProducts = getRecentProducts(products, undefined, 3);
 
   const categoryCards = [
-    { slug: 'tees', label: 'Tees', detail: '280 GSM Heavyweight', image: IMG_TEE_SAGE },
-    { slug: 'kurtas', label: 'Kurtas', detail: 'Handloom Fusion', image: IMG_KURTA_SAGE },
-    { slug: 'shirts', label: 'Shirts', detail: 'Resort & Poplin', image: IMG_SHIRT_OFFWHITE },
-    { slug: 'hoodies', label: 'Hoodies', detail: '420 GSM Loopback', image: IMG_HOODIE_FRONT },
-    { slug: 'bottoms', label: 'Bottoms', detail: 'Pleated & Cargo', image: IMG_BOTTOMS_SAND },
-    { slug: 'accessories', label: 'Objects', detail: 'Waxed Canvas', image: IMG_ACCESSORY_SLING },
+    { slug: 'tees', label: 'Tees', detail: '280 GSM Heavyweight', image: IMG_TEE_CROPPED },
+    { slug: 'kurtas', label: 'Kurtas', detail: 'Handloom Fusion', image: IMG_KURTA_TUNIC },
+    { slug: 'shirts', label: 'Shirts', detail: 'Resort & Poplin', image: IMG_SHIRT_LINEN },
+    { slug: 'hoodies', label: 'Hoodies', detail: '420 GSM Loopback', image: IMG_HOODIE_ZIP },
+    { slug: 'bottoms', label: 'Bottoms', detail: 'Pleated & Cargo', image: IMG_BOTTOMS_CARGO },
+    { slug: 'accessories', label: 'Objects', detail: 'Waxed Canvas', image: IMG_ACC_TOTE },
   ];
 
   return (
@@ -159,8 +161,8 @@ export function HomePage() {
                   className="hidden sm:block absolute -bottom-5 -left-4 w-28 aspect-[3/4] rounded-md overflow-hidden border border-[#C5D1B8] bg-[#F7F5EF]"
                 >
                   <img
-                    src={IMG_KURTA_SAGE}
-                    alt="Mandarin Handloom Kurta"
+                    src={IMG_KURTA_SHORT}
+                    alt="Deccan Pleated Short Kurta"
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
                   />
@@ -170,8 +172,8 @@ export function HomePage() {
                   className="hidden sm:block absolute -top-5 -right-3 w-24 aspect-[3/4] rounded-md overflow-hidden border border-[#C5D1B8] bg-[#F7F5EF]"
                 >
                   <img
-                    src={IMG_HOODIE_FRONT}
-                    alt="420 GSM Sage Hoodie"
+                    src={IMG_HOODIE_SIDE}
+                    alt="420 GSM Sage Hoodie profile"
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
                   />

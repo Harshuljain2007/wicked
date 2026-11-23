@@ -10,13 +10,26 @@ export const IMG_LOOKBOOK = `${ASSET_BASE}src/assets/images/wicked_lookbook_cour
 export const IMG_FABRIC = `${ASSET_BASE}src/assets/images/wicked_fabric_macro_1795345381468.jpg`;
 export const IMG_TEE_SAGE = `${ASSET_BASE}src/assets/images/wicked_tee_sage_1795345380963.jpg`;
 export const IMG_TEE_CHARCOAL = `${ASSET_BASE}src/assets/images/wicked_tee_charcoal_1795345380471.jpg`;
+export const IMG_TEE_CROPPED = `${ASSET_BASE}src/assets/images/wicked_tee_cropped_1795434179513.jpg`;
+export const IMG_TEE_LONGLINE = `${ASSET_BASE}src/assets/images/wicked_tee_longline_1795434179450.jpg`;
 export const IMG_KURTA_SAGE = `${ASSET_BASE}src/assets/images/wicked_kurta_sage_1795345380633.jpg`;
+export const IMG_KURTA_SHORT = `${ASSET_BASE}src/assets/images/wicked_kurta_short_1795434195235.jpg`;
+export const IMG_KURTA_TUNIC = `${ASSET_BASE}src/assets/images/wicked_kurta_tunic_1795434179348.jpg`;
+export const IMG_KURTA_BANDHGALA = `${ASSET_BASE}src/assets/images/wicked_kurta_bandhgala_1795434180033.jpg`;
 export const IMG_SHIRT_OFFWHITE = `${ASSET_BASE}src/assets/images/wicked_shirt_offwhite_1795345381450.jpg`;
+export const IMG_SHIRT_OXFORD = `${ASSET_BASE}src/assets/images/wicked_shirt_oxford_1795434178962.jpg`;
+export const IMG_SHIRT_LINEN = `${ASSET_BASE}src/assets/images/wicked_shirt_linen_1795434179656.jpg`;
 export const IMG_HOODIE_FRONT = `${ASSET_BASE}src/assets/images/wicked_hoodie_front_1795345380349.jpg`;
 export const IMG_HOODIE_SIDE = `${ASSET_BASE}src/assets/images/wicked_hoodie_side_1795345381483.jpg`;
 export const IMG_HOODIE_BACK = `${ASSET_BASE}src/assets/images/wicked_hoodie_back_1795345381587.jpg`;
+export const IMG_HOODIE_ZIP = `${ASSET_BASE}src/assets/images/wicked_hoodie_zip_1795434179379.jpg`;
+export const IMG_HOODIE_CROPPED = `${ASSET_BASE}src/assets/images/wicked_hoodie_cropped_1795434178961.jpg`;
 export const IMG_BOTTOMS_SAND = `${ASSET_BASE}src/assets/images/wicked_bottoms_sand_1795345381876.jpg`;
+export const IMG_BOTTOMS_CARGO = `${ASSET_BASE}src/assets/images/wicked_bottoms_cargo_1795434179820.jpg`;
+export const IMG_BOTTOMS_CULOTTES = `${ASSET_BASE}src/assets/images/wicked_bottoms_culottes_1795434179582.jpg`;
 export const IMG_ACCESSORY_SLING = `${ASSET_BASE}src/assets/images/wicked_accessory_sling_1795345380698.jpg`;
+export const IMG_ACC_CAP = `${ASSET_BASE}src/assets/images/wicked_acc_cap_1795434179353.jpg`;
+export const IMG_ACC_TOTE = `${ASSET_BASE}src/assets/images/wicked_acc_tote_1795434180882.jpg`;
 
 const APPAREL_SIZES = ['S', 'M', 'L', 'XL', 'XXL'];
 
@@ -51,9 +64,9 @@ export const SEED_PRODUCTS: Product[] = [
     onSale: true,
     featured: true,
     colors: [
-      { name: 'Sage', hex: '#9CAF88', images: [IMG_TEE_SAGE, IMG_TEE_CHARCOAL] },
-      { name: 'Charcoal', hex: '#1F2A1C', images: [IMG_TEE_CHARCOAL, IMG_TEE_SAGE], priceDelta: 0 },
-      { name: 'Raw Ecru', hex: '#EDE8DC', images: [IMG_SHIRT_OFFWHITE, IMG_TEE_SAGE], priceDelta: 100 },
+      { name: 'Sage', hex: '#9CAF88', images: [IMG_TEE_SAGE] },
+      { name: 'Charcoal', hex: '#1F2A1C', images: [IMG_TEE_CHARCOAL], priceDelta: 0 },
+      { name: 'Raw Ecru', hex: '#EDE8DC', images: [IMG_SHIRT_OFFWHITE], priceDelta: 100 },
     ],
     variants: makeVariants('WKT01', ['Sage', 'Charcoal', 'Raw Ecru'], 'XXL'),
     rating: 4.8,
@@ -76,8 +89,8 @@ export const SEED_PRODUCTS: Product[] = [
     onSale: false,
     featured: false,
     colors: [
-      { name: 'Charcoal', hex: '#1F2A1C', images: [IMG_TEE_CHARCOAL, IMG_TEE_SAGE] },
-      { name: 'Sage', hex: '#9CAF88', images: [IMG_TEE_SAGE, IMG_TEE_CHARCOAL] },
+      { name: 'Charcoal', hex: '#1F2A1C', images: [IMG_TEE_CHARCOAL] },
+      { name: 'Sage', hex: '#9CAF88', images: [IMG_TEE_SAGE] },
     ],
     variants: makeVariants('WKT02', ['Charcoal', 'Sage']),
     rating: 4.6,
@@ -100,8 +113,8 @@ export const SEED_PRODUCTS: Product[] = [
     onSale: false,
     featured: false,
     colors: [
-      { name: 'Sage', hex: '#9CAF88', images: [IMG_TEE_SAGE, IMG_TEE_CHARCOAL] },
-      { name: 'Charcoal', hex: '#1F2A1C', images: [IMG_TEE_CHARCOAL, IMG_TEE_SAGE] },
+      { name: 'Sage', hex: '#9CAF88', images: [IMG_TEE_CROPPED] },
+      { name: 'Charcoal', hex: '#1F2A1C', images: [IMG_TEE_CHARCOAL] },
     ],
     variants: makeVariants('WKT03', ['Sage', 'Charcoal'], 'S'),
     rating: 4.9,
@@ -125,8 +138,8 @@ export const SEED_PRODUCTS: Product[] = [
     onSale: true,
     featured: false,
     colors: [
-      { name: 'Charcoal', hex: '#1F2A1C', images: [IMG_TEE_CHARCOAL, IMG_TEE_SAGE] },
-      { name: 'Sage', hex: '#9CAF88', images: [IMG_TEE_SAGE, IMG_TEE_CHARCOAL] },
+      { name: 'Charcoal', hex: '#1F2A1C', images: [IMG_TEE_LONGLINE] },
+      { name: 'Sage', hex: '#9CAF88', images: [IMG_TEE_SAGE] },
     ],
     variants: makeVariants('WKT04', ['Charcoal', 'Sage']),
     rating: 4.7,
@@ -150,8 +163,8 @@ export const SEED_PRODUCTS: Product[] = [
     onSale: true,
     featured: true,
     colors: [
-      { name: 'Sage', hex: '#9CAF88', images: [IMG_KURTA_SAGE, IMG_LOOKBOOK] },
-      { name: 'Raw Ecru', hex: '#EDE8DC', images: [IMG_SHIRT_OFFWHITE, IMG_KURTA_SAGE], priceDelta: 0 },
+      { name: 'Sage', hex: '#9CAF88', images: [IMG_KURTA_SAGE] },
+      { name: 'Raw Ecru', hex: '#EDE8DC', images: [IMG_SHIRT_OFFWHITE], priceDelta: 0 },
     ],
     variants: makeVariants('WKK01', ['Sage', 'Raw Ecru'], 'XL'),
     rating: 4.9,
@@ -174,7 +187,7 @@ export const SEED_PRODUCTS: Product[] = [
     onSale: false,
     featured: false,
     colors: [
-      { name: 'Sage', hex: '#9CAF88', images: [IMG_KURTA_SAGE, IMG_SHIRT_OFFWHITE] },
+      { name: 'Sage', hex: '#9CAF88', images: [IMG_KURTA_SHORT] },
     ],
     variants: makeVariants('WKK02', ['Sage']),
     rating: 4.7,
@@ -197,8 +210,8 @@ export const SEED_PRODUCTS: Product[] = [
     onSale: false,
     featured: true,
     colors: [
-      { name: 'Sage', hex: '#9CAF88', images: [IMG_KURTA_SAGE, IMG_HERO] },
-      { name: 'Raw Ecru', hex: '#EDE8DC', images: [IMG_SHIRT_OFFWHITE, IMG_KURTA_SAGE] },
+      { name: 'Sage', hex: '#9CAF88', images: [IMG_KURTA_TUNIC] },
+      { name: 'Raw Ecru', hex: '#EDE8DC', images: [IMG_SHIRT_OFFWHITE] },
     ],
     variants: makeVariants('WKK03', ['Sage', 'Raw Ecru']),
     rating: 4.8,
@@ -222,7 +235,7 @@ export const SEED_PRODUCTS: Product[] = [
     onSale: true,
     featured: false,
     colors: [
-      { name: 'Sage', hex: '#9CAF88', images: [IMG_KURTA_SAGE, IMG_LOOKBOOK] },
+      { name: 'Sage', hex: '#9CAF88', images: [IMG_KURTA_BANDHGALA] },
     ],
     variants: makeVariants('WKK04', ['Sage'], 'S'),
     rating: 4.6,
@@ -245,8 +258,8 @@ export const SEED_PRODUCTS: Product[] = [
     onSale: false,
     featured: true,
     colors: [
-      { name: 'Raw Ecru', hex: '#EDE8DC', images: [IMG_SHIRT_OFFWHITE, IMG_KURTA_SAGE] },
-      { name: 'Sage', hex: '#9CAF88', images: [IMG_KURTA_SAGE, IMG_SHIRT_OFFWHITE] },
+      { name: 'Raw Ecru', hex: '#EDE8DC', images: [IMG_SHIRT_OFFWHITE] },
+      { name: 'Sage', hex: '#9CAF88', images: [IMG_KURTA_SAGE] },
     ],
     variants: makeVariants('WKS01', ['Raw Ecru', 'Sage']),
     rating: 4.8,
@@ -270,7 +283,7 @@ export const SEED_PRODUCTS: Product[] = [
     onSale: true,
     featured: false,
     colors: [
-      { name: 'Raw Ecru', hex: '#EDE8DC', images: [IMG_SHIRT_OFFWHITE, IMG_TEE_SAGE] },
+      { name: 'Raw Ecru', hex: '#EDE8DC', images: [IMG_SHIRT_OXFORD] },
     ],
     variants: makeVariants('WKS02', ['Raw Ecru']),
     rating: 4.7,
@@ -293,8 +306,8 @@ export const SEED_PRODUCTS: Product[] = [
     onSale: false,
     featured: false,
     colors: [
-      { name: 'Raw Ecru', hex: '#EDE8DC', images: [IMG_SHIRT_OFFWHITE, IMG_HERO] },
-      { name: 'Sage', hex: '#9CAF88', images: [IMG_KURTA_SAGE, IMG_SHIRT_OFFWHITE] },
+      { name: 'Raw Ecru', hex: '#EDE8DC', images: [IMG_SHIRT_LINEN] },
+      { name: 'Sage', hex: '#9CAF88', images: [IMG_KURTA_SAGE] },
     ],
     variants: makeVariants('WKS03', ['Raw Ecru', 'Sage']),
     rating: 4.9,
@@ -319,7 +332,7 @@ export const SEED_PRODUCTS: Product[] = [
     featured: true,
     colors: [
       { name: 'Sage', hex: '#9CAF88', images: [IMG_HOODIE_FRONT, IMG_HOODIE_SIDE, IMG_HOODIE_BACK] },
-      { name: 'Charcoal', hex: '#1F2A1C', images: [IMG_TEE_CHARCOAL, IMG_HOODIE_FRONT], priceDelta: 0 },
+      { name: 'Charcoal', hex: '#1F2A1C', images: [IMG_TEE_CHARCOAL], priceDelta: 0 },
     ],
     variants: makeVariants('WKH01', ['Sage', 'Charcoal'], 'M'),
     rating: 4.9,
@@ -342,7 +355,7 @@ export const SEED_PRODUCTS: Product[] = [
     onSale: false,
     featured: false,
     colors: [
-      { name: 'Sage', hex: '#9CAF88', images: [IMG_HOODIE_FRONT, IMG_HOODIE_BACK] },
+      { name: 'Sage', hex: '#9CAF88', images: [IMG_HOODIE_ZIP] },
     ],
     variants: makeVariants('WKH02', ['Sage']),
     rating: 4.7,
@@ -365,7 +378,7 @@ export const SEED_PRODUCTS: Product[] = [
     onSale: false,
     featured: false,
     colors: [
-      { name: 'Sage', hex: '#9CAF88', images: [IMG_HOODIE_FRONT, IMG_HOODIE_SIDE] },
+      { name: 'Sage', hex: '#9CAF88', images: [IMG_HOODIE_CROPPED] },
     ],
     variants: makeVariants('WKH03', ['Sage']),
     rating: 4.8,
@@ -389,8 +402,8 @@ export const SEED_PRODUCTS: Product[] = [
     onSale: true,
     featured: true,
     colors: [
-      { name: 'Sandstone', hex: '#C8B99B', images: [IMG_BOTTOMS_SAND, IMG_LOOKBOOK] },
-      { name: 'Sage', hex: '#9CAF88', images: [IMG_HERO, IMG_BOTTOMS_SAND] },
+      { name: 'Sandstone', hex: '#C8B99B', images: [IMG_BOTTOMS_SAND] },
+      { name: 'Sage', hex: '#9CAF88', images: [IMG_HERO] },
     ],
     variants: makeVariants('WKB01', ['Sandstone', 'Sage'], 'L'),
     rating: 4.9,
@@ -413,7 +426,7 @@ export const SEED_PRODUCTS: Product[] = [
     onSale: false,
     featured: false,
     colors: [
-      { name: 'Sandstone', hex: '#C8B99B', images: [IMG_BOTTOMS_SAND, IMG_LOOKBOOK] },
+      { name: 'Sandstone', hex: '#C8B99B', images: [IMG_BOTTOMS_CARGO] },
     ],
     variants: makeVariants('WKB02', ['Sandstone']),
     rating: 4.7,
@@ -436,7 +449,7 @@ export const SEED_PRODUCTS: Product[] = [
     onSale: false,
     featured: false,
     colors: [
-      { name: 'Sandstone', hex: '#C8B99B', images: [IMG_BOTTOMS_SAND, IMG_HERO] },
+      { name: 'Sandstone', hex: '#C8B99B', images: [IMG_BOTTOMS_CULOTTES] },
     ],
     variants: makeVariants('WKB03', ['Sandstone']),
     rating: 4.8,
@@ -460,7 +473,7 @@ export const SEED_PRODUCTS: Product[] = [
     onSale: true,
     featured: true,
     colors: [
-      { name: 'Olive Sage', hex: '#7F8F6B', images: [IMG_ACCESSORY_SLING, IMG_LOOKBOOK] },
+      { name: 'Olive Sage', hex: '#7F8F6B', images: [IMG_ACCESSORY_SLING] },
     ],
     variants: [{ sku: 'WKA01-OLI-OS', color: 'Olive Sage', size: 'One Size', stock: 18 }],
     rating: 4.9,
@@ -483,7 +496,7 @@ export const SEED_PRODUCTS: Product[] = [
     onSale: false,
     featured: false,
     colors: [
-      { name: 'Olive Sage', hex: '#7F8F6B', images: [IMG_ACCESSORY_SLING] },
+      { name: 'Olive Sage', hex: '#7F8F6B', images: [IMG_ACC_CAP] },
     ],
     variants: [{ sku: 'WKA02-OLI-OS', color: 'Olive Sage', size: 'One Size', stock: 24 }],
     rating: 4.7,
@@ -506,7 +519,7 @@ export const SEED_PRODUCTS: Product[] = [
     onSale: false,
     featured: false,
     colors: [
-      { name: 'Olive Sage', hex: '#7F8F6B', images: [IMG_ACCESSORY_SLING, IMG_HERO] },
+      { name: 'Olive Sage', hex: '#7F8F6B', images: [IMG_ACC_TOTE] },
     ],
     variants: [{ sku: 'WKA03-OLI-OS', color: 'Olive Sage', size: 'One Size', stock: 3 }],
     rating: 4.8,

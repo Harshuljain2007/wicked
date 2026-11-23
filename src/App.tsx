@@ -53,6 +53,18 @@ function AppShell() {
   const { shouldSimplify } = useReducedMotion();
   const location = useLocation();
   const { pathname } = location;
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void import('./pages/CollectionPage');
+      void import('./pages/ProductDetailPage');
+      void import('./pages/ShowcasePage');
+      void import('./pages/CheckoutPage');
+      void import('./pages/WishlistPage');
+      void import('./pages/AccountPage');
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   const [guestEntered, setGuestEntered] = useState<boolean>(() => {
     try {
       return sessionStorage.getItem('wicked_guest_entered') === '1';
@@ -101,10 +113,10 @@ function AppShell() {
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={pathname}
-            initial={shouldSimplify ? { opacity: 0 } : { opacity: 0, y: 8 }}
+            initial={shouldSimplify ? { opacity: 0 } : { opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={shouldSimplify ? { opacity: 0 } : { opacity: 0, y: -6 }}
-            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            exit={shouldSimplify ? { opacity: 0 } : { opacity: 0, y: -4 }}
+            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
           >
             <Routes location={location}>
               <Route path="/" element={<HomePage />} />
