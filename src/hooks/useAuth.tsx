@@ -22,7 +22,13 @@ import {
   handleFirestoreError,
   OperationType,
 } from '../firebase';
-import { staticRequestOtp, staticVerifyOtp, tryApiJson } from '../lib/staticStore';
+import {
+  staticRequestOtp,
+  staticRequestSmsOtp,
+  staticVerifyOtp,
+  staticVerifySmsOtp,
+  tryApiJson,
+} from '../lib/staticStore';
 
 export interface SavedAddressRecord {
   id: string;
@@ -39,6 +45,7 @@ export interface SavedAddressRecord {
 export interface AuthUser {
   uid: string;
   email: string;
+  phone?: string;
   displayName: string;
   isAdmin: boolean;
   provider: 'firebase' | 'otp';
@@ -51,6 +58,8 @@ interface AuthContextValue {
   signInWithGoogle: () => Promise<void>;
   requestOtp: (email: string) => Promise<{ previewCode?: string; message: string }>;
   verifyOtp: (email: string, code: string) => Promise<void>;
+  requestSmsOtp: (phone: string) => Promise<{ phone: string; previewCode?: string; message: string }>;
+  verifySmsOtp: (phone: string, code: string) => Promise<void>;
   signOut: () => Promise<void>;
   getAuthToken: () => Promise<string | null>;
   saveAddress: (address: Omit<SavedAddressRecord, 'id' | 'userId'>) => Promise<void>;
@@ -177,10 +186,70 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const verified = staticVerifyOtp(email, code);
     setOtpToken(verified.token);
     setOtpUser({
-      uid: `otp_${verified.email}`,
+      uid: `otp_${verified.email.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
       email: verified.email,
       displayName: verified.email.split('@')[0],
       isAdmin: verified.isAdmin,
+      provider: 'otp',
+    });
+  }, []);
+
+  const requestSmsOtp = useCallback(async (phone: string) => {
+    const api = await tryApiJson<{
+      phone?: string;
+      previewCode?: string;
+      message?: string;
+      error?: string;
+    }>('/api/auth/sms-otp/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone }),
+    });
+    if (api.available) {
+      if (!api.ok) throw new Error(api.data.error || 'Could not send SMS verification code.');
+      return {
+        phone: api.data.phone || phone,
+        previewCode: api.data.previewCode,
+        message: api.data.message || 'SMS verification code sent.',
+      };
+    }
+    return staticRequestSmsOtp(phone);
+  }, []);
+
+  const verifySmsOtp = useCallback(async (phone: string, code: string) => {
+    const api = await tryApiJson<{
+      token?: string;
+      user?: { phone: string; email: string; isAdmin?: boolean };
+      error?: string;
+    }>('/api/auth/sms-otp/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, code }),
+    });
+    if (api.available) {
+      if (!api.ok || !api.data.token || !api.data.user) {
+        throw new Error(api.data.error || 'Invalid SMS verification code.');
+      }
+      setOtpToken(api.data.token);
+      setOtpUser({
+        uid: `otp_${api.data.user.phone.replace(/\D/g, '')}`,
+        email: api.data.user.email,
+        phone: api.data.user.phone,
+        displayName: api.data.user.phone,
+        isAdmin: false,
+        provider: 'otp',
+      });
+      return;
+    }
+
+    const verified = staticVerifySmsOtp(phone, code);
+    setOtpToken(verified.token);
+    setOtpUser({
+      uid: `otp_${verified.phone.replace(/\D/g, '')}`,
+      email: verified.email,
+      phone: verified.phone,
+      displayName: verified.phone,
+      isAdmin: false,
       provider: 'otp',
     });
   }, []);
@@ -252,6 +321,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signInWithGoogle,
         requestOtp,
         verifyOtp,
+        requestSmsOtp,
+        verifySmsOtp,
         signOut,
         getAuthToken,
         saveAddress,

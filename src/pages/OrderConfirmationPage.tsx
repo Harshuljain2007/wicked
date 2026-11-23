@@ -1,10 +1,10 @@
-import { CheckCircle2, Download, RefreshCw } from 'lucide-react';
+import { CheckCircle2, Download, MessageSquare, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
 import { downloadGstInvoicePdf } from '../lib/invoicePdf';
-import { staticGetOrder, staticRequestExchange, tryApiJson } from '../lib/staticStore';
+import { buildSmsDeepLink, staticGetOrder, staticRequestExchange, tryApiJson } from '../lib/staticStore';
 import type { Order } from '../types';
 
 const TRACKING_STEPS = ['placed', 'paid', 'packed', 'shipped', 'delivered'];
@@ -266,6 +266,21 @@ export function OrderConfirmationPage() {
                 Gift note: &ldquo;{order.giftNote}&rdquo;
               </p>
             )}
+            <div className="pt-3 mt-3 border-t border-[#CFD9C3] flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span className="text-[#4D5A48]">
+                SMS alerts enabled for <strong className="text-[#1F2A1C] tabular-nums">{order.shippingAddress.phone}</strong>
+              </span>
+              <a
+                href={buildSmsDeepLink(
+                  '+917665712877',
+                  `Hi Wicked Studio, checking on my order ${order.id}.`
+                )}
+                className="inline-flex items-center gap-1 font-semibold text-[#1F2A1C] underline"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>Text Studio SMS</span>
+              </a>
+            </div>
           </div>
 
           <div className="p-6 rounded-lg bg-[#FCFBF7] border border-[#C5D1B8]">

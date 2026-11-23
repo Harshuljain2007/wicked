@@ -6,6 +6,8 @@ import { useAuth } from '../hooks/useAuth';
 import { useBag } from '../hooks/useBag';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
 import {
+  buildClientOrderSmsText,
+  recordSmsDispatch,
   saveStaticOrder,
   staticCreateOrder,
   staticSandboxAuthorize,
@@ -46,12 +48,13 @@ export function CheckoutPage() {
   } = useBag();
 
   const [fullName, setFullName] = useState(user?.displayName || '');
-  const [email, setEmail] = useState(user?.email || '');
-  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState(user?.email && !user.email.endsWith('@sms.wicked.in') ? user.email : '');
+  const [phone, setPhone] = useState(user?.phone || '');
   const [line1, setLine1] = useState('');
   const [pincode, setPincode] = useState('');
   const [city, setCity] = useState('');
   const [stateName, setStateName] = useState('');
+  const [smsAlertsOptIn, setSmsAlertsOptIn] = useState(true);
   const [includeGiftNote, setIncludeGiftNote] = useState(false);
   const [giftNote, setGiftNote] = useState('');
   const [includeGstin, setIncludeGstin] = useState(false);
@@ -73,9 +76,10 @@ export function CheckoutPage() {
   });
 
   useEffect(() => {
-    if (user?.email && !email) setEmail(user.email);
-    if (user?.displayName && !fullName) setFullName(user.displayName);
-  }, [user, email, fullName]);
+    if (user?.email && !user.email.endsWith('@sms.wicked.in') && !email) setEmail(user.email);
+    if (user?.displayName && !user.phone && !fullName) setFullName(user.displayName);
+    if (user?.phone && !phone) setPhone(user.phone);
+  }, [user, email, fullName, phone]);
 
   // Pincode auto-fill for city and state
   useEffect(() => {
@@ -152,6 +156,15 @@ export function CheckoutPage() {
           payload.razorpay_payment_id,
           api.data.order
         );
+        if (smsAlertsOptIn) {
+          void recordSmsDispatch({
+            to: api.data.order.customerPhone,
+            message: buildClientOrderSmsText(api.data.order),
+            event: 'payment_confirmed',
+            orderId: api.data.order.id,
+            createdBy: api.data.order.userId,
+          });
+        }
         clearBag();
         navigate(`/order/${api.data.order.id}?token=${encodeURIComponent(api.data.orderToken || '')}`);
         return;
@@ -162,6 +175,15 @@ export function CheckoutPage() {
         razorpay_order_id: payload.razorpay_order_id,
         razorpay_payment_id: payload.razorpay_payment_id,
       });
+      if (smsAlertsOptIn) {
+        void recordSmsDispatch({
+          to: verified.order.customerPhone,
+          message: buildClientOrderSmsText(verified.order),
+          event: 'payment_confirmed',
+          orderId: verified.order.id,
+          createdBy: verified.order.userId,
+        });
+      }
       clearBag();
       navigate(`/order/${verified.order.id}?token=${encodeURIComponent(verified.orderToken)}`);
     } catch (err) {
@@ -222,11 +244,29 @@ export function CheckoutPage() {
         if (api.available) {
           if (!api.ok || !api.data.order) throw new Error(api.data.error || 'Unable to place COD order.');
           await syncOrderToFirestore(api.data.order);
+          if (smsAlertsOptIn) {
+            void recordSmsDispatch({
+              to: api.data.order.customerPhone,
+              message: buildClientOrderSmsText(api.data.order),
+              event: 'order_placed',
+              orderId: api.data.order.id,
+              createdBy: api.data.order.userId,
+            });
+          }
           clearBag();
           navigate(`/order/${api.data.order.id}?token=${encodeURIComponent(api.data.orderToken || '')}`);
           return;
         }
         const created = await staticCreateOrder(payload, 'cod', user);
+        if (smsAlertsOptIn) {
+          void recordSmsDispatch({
+            to: created.order.customerPhone,
+            message: buildClientOrderSmsText(created.order),
+            event: 'order_placed',
+            orderId: created.order.id,
+            createdBy: created.order.userId,
+          });
+        }
         clearBag();
         navigate(`/order/${created.order.id}?token=${encodeURIComponent(created.orderToken)}`);
         return;
@@ -498,12 +538,24 @@ export function CheckoutPage() {
               <label className="inline-flex items-center gap-2 text-xs font-semibold cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={includeGiftNote}
-                  onChange={(e) => setIncludeGiftNote(e.target.checked)}
+                  checked={smsAlertsOptIn}
+                  onChange={(e) => setSmsAlertsOptIn(e.target.checked)}
                   className="accent-[#1F2A1C]"
                 />
-                <span>Add a complimentary studio gift note</span>
+                <span>Send SMS order &amp; dispatch alerts to this mobile number</span>
               </label>
+
+              <div>
+                <label className="inline-flex items-center gap-2 text-xs font-semibold cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeGiftNote}
+                    onChange={(e) => setIncludeGiftNote(e.target.checked)}
+                    className="accent-[#1F2A1C]"
+                  />
+                  <span>Add a complimentary studio gift note</span>
+                </label>
+              </div>
               {includeGiftNote && (
                 <textarea
                   rows={2}

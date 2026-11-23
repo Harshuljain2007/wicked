@@ -36,6 +36,12 @@ export const SERVER_CONFIG = {
     .map((o) => o.trim())
     .filter(Boolean),
   adminEmail: (process.env.ADMIN_EMAIL || 'harshuljain923@gmail.com').toLowerCase(),
+  ownerAlertPhone: process.env.OWNER_ALERT_PHONE || '+917665712877',
+  twilioAccountSid: process.env.TWILIO_ACCOUNT_SID || '',
+  twilioAuthToken: process.env.TWILIO_AUTH_TOKEN || '',
+  twilioFromNumber: process.env.TWILIO_FROM_NUMBER || '',
+  fast2smsApiKey: process.env.FAST2SMS_API_KEY || '',
+  fast2smsSenderId: process.env.FAST2SMS_SENDER_ID || 'WICKED',
   razorpayKeyId: process.env.RAZORPAY_KEY_ID || '',
   razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || '',
   razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || '',
@@ -50,4 +56,18 @@ export function hasRealRazorpayKeys(): boolean {
     !SERVER_CONFIG.razorpayKeyId.includes('placeholder') &&
     Boolean(SERVER_CONFIG.razorpayKeySecret)
   );
+}
+
+export function getSmsGatewayProvider(): 'twilio' | 'fast2sms' | 'sandbox' {
+  if (
+    SERVER_CONFIG.twilioAccountSid &&
+    SERVER_CONFIG.twilioAuthToken &&
+    SERVER_CONFIG.twilioFromNumber
+  ) {
+    return 'twilio';
+  }
+  if (SERVER_CONFIG.fast2smsApiKey) {
+    return 'fast2sms';
+  }
+  return 'sandbox';
 }

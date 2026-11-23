@@ -1,13 +1,19 @@
-import { AlertTriangle, Download, LogOut, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { AlertTriangle, Download, LogOut, MessageSquare, Plus, RefreshCw, Send, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { IMG_TEE_SAGE, SEED_SHOWCASE } from '../data/seedData';
 import { auth } from '../firebase';
 import { useAuth } from '../hooks/useAuth';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
 import {
+  buildClientOrderSmsText,
+  buildSmsDeepLink,
   fetchAdminOrdersFromFirestore,
+  getStaticSmsLogs,
   mergeOrdersList,
+  mergeSmsLogs,
+  recordSmsDispatch,
   saveStaticOrder,
+  saveStaticSmsLog,
   staticAdminDeleteProduct,
   staticAdminOrdersCsv,
   staticAdminRefundOrder,
@@ -17,10 +23,11 @@ import {
   staticAdminUpsertProduct,
   staticGetAdminDashboard,
   subscribeAdminOrders,
+  subscribeAdminSmsLogs,
   syncAdminOrderUpdateToFirestore,
   tryApiJson,
 } from '../lib/staticStore';
-import type { BannerConfig, Coupon, Order, OrderStatus, Product, ShowcaseData } from '../types';
+import type { BannerConfig, Coupon, Order, OrderStatus, Product, ShowcaseData, SmsLogRecord } from '../types';
 
 interface DashboardResponse {
   stats: {
@@ -47,7 +54,7 @@ interface DashboardResponse {
 
 export function AdminPage() {
   const { user, signInWithGoogle, signOut, getAuthToken } = useAuth();
-  const [tab, setTab] = useState<'orders' | 'products' | 'merchandising'>('orders');
+  const [tab, setTab] = useState<'orders' | 'products' | 'merchandising' | 'sms'>('orders');
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [firestoreOrders, setFirestoreOrders] = useState<Order[]>([]);
   const [syncingOrders, setSyncingOrders] = useState(false);
@@ -72,6 +79,15 @@ export function AdminPage() {
   const [newCouponPct, setNewCouponPct] = useState(10);
   const [bannerHeadline, setBannerHeadline] = useState('');
   const [marqueeText, setMarqueeText] = useState('');
+
+  // SMS Composer & Logs state
+  const [smsTo, setSmsTo] = useState('');
+  const [smsOrderId, setSmsOrderId] = useState('');
+  const [smsMessage, setSmsMessage] = useState('');
+  const [sendingSms, setSendingSms] = useState(false);
+  const [apiSmsLogs, setApiSmsLogs] = useState<SmsLogRecord[]>([]);
+  const [firestoreSmsLogs, setFirestoreSmsLogs] = useState<SmsLogRecord[]>([]);
+  const [smsProviderLabel, setSmsProviderLabel] = useState<'twilio' | 'fast2sms' | 'sandbox'>('sandbox');
 
   useDocumentMeta({
     title: 'Admin Console — Wicked',
@@ -114,8 +130,31 @@ export function AdminPage() {
   }, [user, loadDashboard]);
 
   useEffect(() => {
+    if (!user?.isAdmin) {
+      setApiSmsLogs([]);
+      return;
+    }
+    setApiSmsLogs(getStaticSmsLogs());
+    (async () => {
+      const token = await getAuthToken();
+      if (!token) return;
+      const api = await tryApiJson<{
+        provider?: 'twilio' | 'fast2sms' | 'sandbox';
+        logs?: SmsLogRecord[];
+      }>('/api/admin/sms/logs', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (api.available && api.ok) {
+        if (api.data.provider) setSmsProviderLabel(api.data.provider);
+        if (Array.isArray(api.data.logs)) setApiSmsLogs(api.data.logs);
+      }
+    })();
+  }, [user, getAuthToken]);
+
+  useEffect(() => {
     if (!user?.isAdmin || !auth.currentUser?.emailVerified) {
       setFirestoreOrders([]);
+      setFirestoreSmsLogs([]);
       return;
     }
     const unsub = subscribeAdminOrders(
@@ -129,12 +168,24 @@ export function AdminPage() {
         setToast(`Firestore sync notice: ${err.message}`);
       }
     );
-    return () => unsub();
+    const unsubSms = subscribeAdminSmsLogs((logs) => {
+      setFirestoreSmsLogs(logs);
+      for (const l of logs) saveStaticSmsLog(l);
+    });
+    return () => {
+      unsub();
+      unsubSms();
+    };
   }, [user]);
 
   const mergedOrders = useMemo(
     () => mergeOrdersList(data?.orders || [], firestoreOrders),
     [data?.orders, firestoreOrders]
+  );
+
+  const mergedSmsLogs = useMemo(
+    () => mergeSmsLogs(getStaticSmsLogs(), apiSmsLogs, firestoreSmsLogs),
+    [apiSmsLogs, firestoreSmsLogs]
   );
 
   const computedStats = useMemo(() => {
@@ -256,11 +307,96 @@ export function AdminPage() {
         { status, trackingNumber },
         updatedLocal || targetOrder
       );
+      if (updatedLocal || targetOrder) {
+        const orderForSms = {
+          ...(updatedLocal || targetOrder)!,
+          status,
+          trackingNumber: trackingNumber !== undefined ? trackingNumber : (updatedLocal || targetOrder)?.trackingNumber,
+        };
+        if (orderForSms.customerPhone) {
+          void recordSmsDispatch({
+            to: orderForSms.customerPhone,
+            message: buildClientOrderSmsText(orderForSms),
+            event: 'status_update',
+            orderId,
+            createdBy: user.uid,
+          });
+        }
+      }
       setToast(`Order ${orderId} updated to ${status}`);
     } catch (err) {
       setToast(err instanceof Error ? err.message : 'Failed to sync order update.');
     }
     loadDashboard();
+  };
+
+  const handleOpenSmsForOrder = (order: Order) => {
+    setSmsTo(order.customerPhone || order.shippingAddress.phone || '');
+    setSmsOrderId(order.id);
+    setSmsMessage(buildClientOrderSmsText(order));
+    setTab('sms');
+  };
+
+  const handleSendAdminSms = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!smsTo.trim() || !smsMessage.trim()) return;
+    setSendingSms(true);
+    try {
+      const token = await getAuthToken();
+      if (token) {
+        const api = await tryApiJson<{ log?: SmsLogRecord; error?: string }>('/api/admin/sms/send', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            to: smsTo.trim(),
+            message: smsMessage.trim(),
+            orderId: smsOrderId.trim() || undefined,
+            event: 'custom',
+          }),
+        });
+        if (api.available) {
+          if (!api.ok || !api.data.log) {
+            throw new Error(api.data.error || 'Unable to send SMS.');
+          }
+          saveStaticSmsLog(api.data.log);
+          setApiSmsLogs((prev) => [api.data.log!, ...prev]);
+          await recordSmsDispatch({
+            to: api.data.log.to,
+            message: api.data.log.message,
+            event: api.data.log.event,
+            provider: api.data.log.provider,
+            status: api.data.log.status,
+            orderId: api.data.log.orderId,
+            createdBy: user.uid,
+          });
+          setToast(
+            api.data.log.status === 'sent'
+              ? `SMS delivered to ${api.data.log.to}`
+              : `SMS queued in sandbox log for ${api.data.log.to}`
+          );
+          setSmsMessage('');
+          return;
+        }
+      }
+
+      const log = await recordSmsDispatch({
+        to: smsTo.trim(),
+        message: smsMessage.trim(),
+        event: 'custom',
+        orderId: smsOrderId.trim() || undefined,
+        createdBy: user.uid,
+      });
+      setApiSmsLogs((prev) => [log, ...prev]);
+      setToast(`SMS saved to dispatch log for ${log.to}`);
+      setSmsMessage('');
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : 'SMS send failed.');
+    } finally {
+      setSendingSms(false);
+    }
   };
 
   const handleRefundOrder = async (order: Order) => {
@@ -489,6 +625,7 @@ export function AdminPage() {
             { id: 'orders', label: 'Orders & Refunds' },
             { id: 'products', label: 'Products & Stock' },
             { id: 'merchandising', label: 'Coupons & Banners' },
+            { id: 'sms', label: 'SMS Alerts' },
           ].map((t) => (
             <button
               key={t.id}
@@ -619,7 +756,7 @@ export function AdminPage() {
                   <th className="py-3 px-4">Total</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4">Tracking</th>
-                  <th className="py-3 px-4">Refund</th>
+                  <th className="py-3 px-4">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#CFD9C3] tabular-nums">
@@ -666,17 +803,29 @@ export function AdminPage() {
                       />
                     </td>
                     <td className="py-3 px-4">
-                      {o.status !== 'returned' ? (
-                        <button
-                          type="button"
-                          onClick={() => handleRefundOrder(o)}
-                          className="px-3 py-1 rounded text-xs font-semibold bg-[#E7ECE0] border border-[#C5D1B8] hover:bg-[#9CAF88]"
-                        >
-                          Refund
-                        </button>
-                      ) : (
-                        <span className="text-xs text-[#4D5A48]">Refunded</span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {o.customerPhone && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSmsForOrder(o)}
+                            className="px-2.5 py-1 rounded text-xs font-semibold bg-[#E7ECE0] border border-[#C5D1B8] hover:bg-[#9CAF88] inline-flex items-center gap-1"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span>SMS</span>
+                          </button>
+                        )}
+                        {o.status !== 'returned' ? (
+                          <button
+                            type="button"
+                            onClick={() => handleRefundOrder(o)}
+                            className="px-3 py-1 rounded text-xs font-semibold bg-[#E7ECE0] border border-[#C5D1B8] hover:bg-[#9CAF88]"
+                          >
+                            Refund
+                          </button>
+                        ) : (
+                          <span className="text-xs text-[#4D5A48]">Refunded</span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -890,6 +1039,167 @@ export function AdminPage() {
                 Add
               </button>
             </form>
+          </div>
+        </section>
+      )}
+
+      {tab === 'sms' && (
+        <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          <form
+            onSubmit={handleSendAdminSms}
+            className="lg:col-span-5 p-6 rounded-lg bg-[#FCFBF7] border border-[#C5D1B8] space-y-4"
+          >
+            <div>
+              <h2 className="font-display text-xl font-bold flex items-center gap-2">
+                <MessageSquare className="w-5 h-5" />
+                <span>Send Customer SMS</span>
+              </h2>
+              <p className="text-xs text-[#4D5A48] mt-1">
+                Gateway mode: <strong className="uppercase">{smsProviderLabel}</strong> · Use quick order templates or open directly in your device SMS app.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold mb-1" htmlFor="sms-order-select">
+                Fill from Order (Optional)
+              </label>
+              <select
+                id="sms-order-select"
+                value={smsOrderId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setSmsOrderId(id);
+                  const found = mergedOrders.find((o) => o.id === id);
+                  if (found) {
+                    setSmsTo(found.customerPhone || found.shippingAddress.phone || '');
+                    setSmsMessage(buildClientOrderSmsText(found));
+                  }
+                }}
+                className="w-full px-3 py-2 text-sm bg-[#F7F5EF] border border-[#C5D1B8] rounded-md"
+              >
+                <option value="">Select an order...</option>
+                {mergedOrders.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.id} — {o.shippingAddress.fullName} ({o.customerPhone || 'No phone'})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold mb-1" htmlFor="sms-to-input">
+                Customer Mobile Number
+              </label>
+              <input
+                id="sms-to-input"
+                type="tel"
+                required
+                value={smsTo}
+                onChange={(e) => setSmsTo(e.target.value)}
+                placeholder="+91 98XXXXXXXX"
+                className="w-full px-3 py-2 text-sm bg-[#F7F5EF] border border-[#C5D1B8] rounded-md tabular-nums"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-semibold" htmlFor="sms-body-input">
+                  SMS Message
+                </label>
+                <span className="text-[11px] text-[#4D5A48] tabular-nums">
+                  {smsMessage.length}/480
+                </span>
+              </div>
+              <textarea
+                id="sms-body-input"
+                rows={4}
+                required
+                maxLength={480}
+                value={smsMessage}
+                onChange={(e) => setSmsMessage(e.target.value)}
+                placeholder="Write a dispatch update, tracking AWB, or studio support message..."
+                className="w-full px-3 py-2 text-sm bg-[#F7F5EF] border border-[#C5D1B8] rounded-md"
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {[
+                {
+                  label: 'Packed',
+                  text: `WICKED: Your order ${smsOrderId || ''} is packed and ready for courier pickup. Help: +91 76657 12877.`,
+                },
+                {
+                  label: 'Shipped',
+                  text: `WICKED: Your order ${smsOrderId || ''} has been shipped! Track updates at wicked. Help: +91 76657 12877.`,
+                },
+                {
+                  label: 'Out for Delivery',
+                  text: `WICKED: Your order ${smsOrderId || ''} is out for delivery today. Keep your phone reachable.`,
+                },
+              ].map((tpl) => (
+                <button
+                  key={tpl.label}
+                  type="button"
+                  onClick={() => setSmsMessage(tpl.text.replace(/\s+/g, ' ').trim())}
+                  className="px-2.5 py-1 rounded bg-[#E7ECE0] border border-[#C5D1B8] text-xs font-semibold hover:bg-[#9CAF88]/50"
+                >
+                  + {tpl.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
+              <button
+                type="submit"
+                disabled={sendingSms}
+                className="flex-1 py-2.5 px-4 rounded-md bg-[#9CAF88] text-[#1F2A1C] font-bold text-sm hover:bg-[#8EA379] inline-flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                <Send className="w-4 h-4" />
+                <span>{sendingSms ? 'Sending...' : 'Send SMS'}</span>
+              </button>
+              {smsTo.trim() && smsMessage.trim() && (
+                <a
+                  href={buildSmsDeepLink(smsTo, smsMessage)}
+                  className="py-2.5 px-4 rounded-md bg-[#E7ECE0] border border-[#C5D1B8] text-[#1F2A1C] font-semibold text-sm text-center hover:bg-[#9CAF88]/40"
+                >
+                  Open Phone SMS App
+                </a>
+              )}
+            </div>
+          </form>
+
+          <div className="lg:col-span-7 p-6 rounded-lg bg-[#FCFBF7] border border-[#C5D1B8] space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="font-display text-xl font-bold">SMS Dispatch Log</h2>
+              <span className="text-xs text-[#4D5A48] tabular-nums">
+                {mergedSmsLogs.length} message(s)
+              </span>
+            </div>
+
+            {mergedSmsLogs.length === 0 ? (
+              <p className="text-sm text-[#4D5A48] py-8 text-center">
+                No SMS notifications dispatched yet. Order confirmations, status changes, and custom alerts will appear here.
+              </p>
+            ) : (
+              <ul className="divide-y divide-[#CFD9C3] max-h-[460px] overflow-y-auto pr-1">
+                {mergedSmsLogs.map((log) => (
+                  <li key={log.id} className="py-3 space-y-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <span className="font-semibold text-[#1F2A1C] tabular-nums">
+                        {log.to}
+                        {log.orderId ? ` · ${log.orderId}` : ''}
+                      </span>
+                      <span className="text-[#4D5A48] capitalize">
+                        {log.event.replace('_', ' ')} · {log.status} ·{' '}
+                        {new Date(log.createdAt).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    <p className="text-sm text-[#4D5A48] leading-snug">{log.message}</p>
+                    {log.error && <p className="text-xs text-[#1F2A1C]">Error: {log.error}</p>}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </section>
       )}

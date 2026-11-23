@@ -1,8 +1,16 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { requireAdmin } from '../lib/authMiddleware.ts';
+import { requireAdmin, type AuthenticatedRequest } from '../lib/authMiddleware.ts';
 import { catalogStore } from '../lib/catalogStore.ts';
+import { getSmsGatewayProvider, SERVER_CONFIG } from '../lib/config.ts';
 import { issueRazorpayRefund } from '../lib/razorpay.ts';
+import {
+  buildOrderStatusSms,
+  buildRefundSms,
+  listSmsLogs,
+  normalizeIndianPhone,
+  sendSms,
+} from '../lib/sms.ts';
 
 export const adminRouter = Router();
 
@@ -122,7 +130,7 @@ const orderUpdateSchema = z.object({
   trackingNumber: z.string().max(80).optional(),
 });
 
-adminRouter.patch('/orders/:id', (req, res) => {
+adminRouter.patch('/orders/:id', (req: AuthenticatedRequest, res) => {
   const parsed = orderUpdateSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'Invalid order update.' });
@@ -133,6 +141,13 @@ adminRouter.patch('/orders/:id', (req, res) => {
     res.status(404).json({ error: 'Order not found.' });
     return;
   }
+  void sendSms({
+    to: updated.customerPhone,
+    message: buildOrderStatusSms(updated),
+    event: 'status_update',
+    orderId: updated.id,
+    createdBy: req.user?.email || 'admin',
+  });
   res.json({ order: updated });
 });
 
@@ -162,6 +177,15 @@ adminRouter.post('/orders/:id/refund', async (req, res) => {
       refundId: `cod_rfnd_${Date.now()}`,
       refundAmount: parsed.data.amountInr,
     });
+    if (updated) {
+      void sendSms({
+        to: updated.customerPhone,
+        message: buildRefundSms(updated),
+        event: 'refund',
+        orderId: updated.id,
+        createdBy: 'admin',
+      });
+    }
     res.json({ order: updated });
     return;
   }
@@ -176,6 +200,15 @@ adminRouter.post('/orders/:id/refund', async (req, res) => {
       refundId: refund.refundId,
       refundAmount: Math.round(refund.amountPaise / 100),
     });
+    if (updated) {
+      void sendSms({
+        to: updated.customerPhone,
+        message: buildRefundSms(updated),
+        event: 'refund',
+        orderId: updated.id,
+        createdBy: 'admin',
+      });
+    }
     res.json({ order: updated, refund });
   } catch (error) {
     res.status(502).json({
@@ -245,4 +278,44 @@ adminRouter.put('/banners', (req, res) => {
 adminRouter.put('/showcase', (req, res) => {
   const showcase = catalogStore.setShowcase(req.body);
   res.json({ showcase });
+});
+
+adminRouter.get('/sms/logs', (_req, res) => {
+  const provider = getSmsGatewayProvider();
+  res.json({
+    provider,
+    liveConfigured: provider !== 'sandbox',
+    ownerAlertPhone: SERVER_CONFIG.ownerAlertPhone,
+    logs: listSmsLogs(),
+  });
+});
+
+const adminSendSmsSchema = z.object({
+  to: z.string().min(10).max(20),
+  message: z.string().trim().min(3).max(480),
+  orderId: z.string().max(128).optional(),
+  event: z
+    .enum(['order_placed', 'payment_confirmed', 'status_update', 'refund', 'otp', 'custom'])
+    .optional(),
+});
+
+adminRouter.post('/sms/send', async (req: AuthenticatedRequest, res) => {
+  const parsed = adminSendSmsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Enter a valid mobile number and SMS message (3-480 chars).' });
+    return;
+  }
+  const normalized = normalizeIndianPhone(parsed.data.to);
+  if (!normalized) {
+    res.status(400).json({ error: 'Enter a valid 10-digit Indian mobile number or +91 number.' });
+    return;
+  }
+  const log = await sendSms({
+    to: normalized,
+    message: parsed.data.message,
+    event: parsed.data.event || 'custom',
+    orderId: parsed.data.orderId,
+    createdBy: req.user?.email || 'admin',
+  });
+  res.status(log.status === 'failed' ? 502 : 200).json({ log });
 });

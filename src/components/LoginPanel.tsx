@@ -14,9 +14,11 @@ export function LoginPanel({
   heading = 'Sign in to Wicked',
   subheading = 'Access saved addresses, track your orders, and sync your wishlist across devices.',
 }: LoginPanelProps) {
-  const { signInWithGoogle, requestOtp, verifyOtp } = useAuth();
+  const { signInWithGoogle, requestOtp, verifyOtp, requestSmsOtp, verifySmsOtp } = useAuth();
 
+  const [otpChannel, setOtpChannel] = useState<'email' | 'sms'>('sms');
   const [otpEmail, setOtpEmail] = useState('');
+  const [otpPhone, setOtpPhone] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [previewOtp, setPreviewOtp] = useState('');
@@ -41,9 +43,16 @@ export function LoginPanel({
     setAuthError('');
     setBusy(true);
     try {
-      const res = await requestOtp(otpEmail);
-      setOtpSent(true);
-      if (res.previewCode) setPreviewOtp(res.previewCode);
+      if (otpChannel === 'sms') {
+        const res = await requestSmsOtp(otpPhone);
+        setOtpPhone(res.phone);
+        setOtpSent(true);
+        setPreviewOtp(res.previewCode || '');
+      } else {
+        const res = await requestOtp(otpEmail);
+        setOtpSent(true);
+        setPreviewOtp(res.previewCode || '');
+      }
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : 'Failed to send verification code.');
     } finally {
@@ -56,13 +65,25 @@ export function LoginPanel({
     setAuthError('');
     setBusy(true);
     try {
-      await verifyOtp(otpEmail, otpCode);
+      if (otpChannel === 'sms') {
+        await verifySmsOtp(otpPhone, otpCode);
+      } else {
+        await verifyOtp(otpEmail, otpCode);
+      }
       onSuccess?.();
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : 'Verification failed.');
     } finally {
       setBusy(false);
     }
+  };
+
+  const switchChannel = (next: 'email' | 'sms') => {
+    setOtpChannel(next);
+    setOtpSent(false);
+    setOtpCode('');
+    setPreviewOtp('');
+    setAuthError('');
   };
 
   return (
@@ -84,32 +105,68 @@ export function LoginPanel({
         {busy ? 'Connecting...' : 'Continue with Google'}
       </button>
 
-      <div className="border-t border-[#CFD9C3] pt-5">
-        <p className="text-xs font-semibold text-[#4D5A48] mb-3">Or sign in via Email OTP</p>
+      <div className="border-t border-[#CFD9C3] pt-5 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-semibold text-[#4D5A48]">Or sign in via 6-digit OTP</p>
+          <div className="inline-flex rounded-md border border-[#C5D1B8] bg-[#E7ECE0] p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => switchChannel('sms')}
+              className={`px-2.5 py-1 rounded font-semibold transition-colors ${
+                otpChannel === 'sms' ? 'bg-[#FCFBF7] text-[#1F2A1C]' : 'text-[#4D5A48]'
+              }`}
+            >
+              Mobile SMS
+            </button>
+            <button
+              type="button"
+              onClick={() => switchChannel('email')}
+              className={`px-2.5 py-1 rounded font-semibold transition-colors ${
+                otpChannel === 'email' ? 'bg-[#FCFBF7] text-[#1F2A1C]' : 'text-[#4D5A48]'
+              }`}
+            >
+              Email
+            </button>
+          </div>
+        </div>
+
         {!otpSent ? (
           <form onSubmit={handleRequestOtp} className="space-y-3">
-            <input
-              type="email"
-              required
-              value={otpEmail}
-              onChange={(e) => setOtpEmail(e.target.value)}
-              placeholder="you@example.com"
-              aria-label="Email address"
-              className="w-full px-3 py-2.5 text-sm bg-[#F7F5EF] border border-[#C5D1B8] rounded-md text-[#1F2A1C] placeholder:text-[#4D5A48]"
-            />
+            {otpChannel === 'sms' ? (
+              <input
+                type="tel"
+                required
+                value={otpPhone}
+                onChange={(e) => setOtpPhone(e.target.value)}
+                placeholder="+91 98XXXXXXXX"
+                aria-label="Mobile number"
+                className="w-full px-3 py-2.5 text-sm bg-[#F7F5EF] border border-[#C5D1B8] rounded-md text-[#1F2A1C] placeholder:text-[#4D5A48] tabular-nums"
+              />
+            ) : (
+              <input
+                type="email"
+                required
+                value={otpEmail}
+                onChange={(e) => setOtpEmail(e.target.value)}
+                placeholder="you@example.com"
+                aria-label="Email address"
+                className="w-full px-3 py-2.5 text-sm bg-[#F7F5EF] border border-[#C5D1B8] rounded-md text-[#1F2A1C] placeholder:text-[#4D5A48]"
+              />
+            )}
             <button
               type="submit"
               disabled={busy}
               className="w-full py-2.5 px-4 rounded-md bg-[#E7ECE0] border border-[#C5D1B8] font-semibold text-sm text-[#1F2A1C] hover:bg-[#9CAF88] transition-colors min-h-[44px]"
             >
-              Send 6-Digit Code
+              {otpChannel === 'sms' ? 'Send 6-Digit SMS Code' : 'Send 6-Digit Email Code'}
             </button>
           </form>
         ) : (
           <form onSubmit={handleVerifyOtp} className="space-y-3">
             {previewOtp && (
               <p className="text-xs bg-[#E7ECE0] p-2.5 rounded border border-[#C5D1B8] text-[#1F2A1C]">
-                Preview OTP code: <strong className="font-mono">{previewOtp}</strong>
+                Preview {otpChannel === 'sms' ? 'SMS' : 'OTP'} code:{' '}
+                <strong className="font-mono">{previewOtp}</strong>
               </p>
             )}
             <input

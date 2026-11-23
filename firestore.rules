@@ -179,6 +179,21 @@ service cloud.firestore {
         (!('updatedAt' in data) || data.updatedAt == request.time);
     }
 
+    function isValidSmsLog(data, logId) {
+      return data.keys().hasAll(['id', 'to', 'message', 'event', 'provider', 'status', 'createdBy', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'orderId', 'to', 'message', 'event', 'provider', 'status', 'createdBy', 'error', 'createdAt']) &&
+        data.id == logId &&
+        (!('orderId' in data) || isValidId(data.orderId)) &&
+        data.to is string && data.to.size() >= 8 && data.to.size() <= 24 &&
+        data.message is string && data.message.size() >= 2 && data.message.size() <= 500 &&
+        data.event in ['order_placed', 'payment_confirmed', 'status_update', 'refund', 'otp', 'custom'] &&
+        data.provider in ['twilio', 'fast2sms', 'sandbox', 'device_sms'] &&
+        data.status in ['sent', 'simulated', 'queued', 'failed'] &&
+        data.createdBy is string && data.createdBy.size() >= 2 && data.createdBy.size() <= 128 &&
+        (!('error' in data) || (data.error is string && data.error.size() <= 300)) &&
+        data.createdAt == request.time;
+    }
+
     match /products/{productId} {
       allow get: if isValidId(productId);
       allow list: if true;
@@ -276,6 +291,20 @@ service cloud.firestore {
     match /admins/{adminUid} {
       allow get: if isValidId(adminUid) && isVerifiedUser() && request.auth.uid == adminUid;
       allow list, create, update, delete: if false;
+    }
+
+    match /smsLogs/{logId} {
+      allow get: if isValidId(logId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(logId) && isValidSmsLog(incoming(), logId) && (
+        isAdmin() || (
+          incoming().event in ['order_placed', 'payment_confirmed', 'otp'] && (
+            (isVerifiedUser() && incoming().createdBy == request.auth.uid) ||
+            incoming().createdBy.matches('^(guest|otp)_[a-zA-Z0-9_\\-]+$')
+          )
+        )
+      );
+      allow update, delete: if false;
     }
   }
 }

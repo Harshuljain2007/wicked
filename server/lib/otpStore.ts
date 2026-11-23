@@ -8,12 +8,12 @@ interface OtpEntry {
 
 const otpStore = new Map<string, OtpEntry>();
 
-function hashOtp(email: string, code: string): string {
-  return crypto.createHash('sha256').update(`${email.toLowerCase()}:${code}`).digest('hex');
+function hashOtp(identifier: string, code: string): string {
+  return crypto.createHash('sha256').update(`${identifier.toLowerCase()}:${code}`).digest('hex');
 }
 
-export function createEmailOtp(email: string): { code: string; expiresInSeconds: number } {
-  const normalized = email.toLowerCase().trim();
+export function createEmailOtp(identifier: string): { code: string; expiresInSeconds: number } {
+  const normalized = identifier.toLowerCase().trim();
   const code = String(crypto.randomInt(100000, 999999));
   otpStore.set(normalized, {
     hash: hashOtp(normalized, code),

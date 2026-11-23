@@ -30,6 +30,9 @@ import type {
   Product,
   Review,
   ShippingAddress,
+  SmsEventType,
+  SmsLogRecord,
+  SmsProviderType,
 } from '../types';
 
 const ORDERS_KEY = 'wicked_static_orders_v1';
@@ -38,6 +41,7 @@ const COUPONS_KEY = 'wicked_static_coupons_v1';
 const BANNER_KEY = 'wicked_static_banner_v1';
 const REVIEWS_KEY = 'wicked_static_reviews_v1';
 const OTP_SESSION_KEY = 'wicked_static_otp_v1';
+const SMS_LOGS_KEY = 'wicked_static_sms_logs_v1';
 
 export type ApiJsonResult<T = unknown> =
   | { available: true; ok: boolean; status: number; data: T }
@@ -878,4 +882,214 @@ export function staticAdminOrdersCsv(ordersInput?: Order[]): string {
     ].join(',')
   );
   return [header, ...rows].join('\n');
+}
+
+export function normalizeClientIndianPhone(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length === 10 && /^[6-9]/.test(digits)) {
+    return `+91${digits}`;
+  }
+  if (digits.length === 12 && digits.startsWith('91')) {
+    return `+${digits}`;
+  }
+  if (digits.length >= 10 && digits.length <= 15) {
+    return `+${digits}`;
+  }
+  return null;
+}
+
+export function buildSmsDeepLink(phone: string, message: string): string {
+  const normalized = normalizeClientIndianPhone(phone) || phone.replace(/[^\d+]/g, '');
+  const encodedBody = encodeURIComponent(message);
+  return `sms:${normalized}?body=${encodedBody}`;
+}
+
+export function buildClientOrderSmsText(order: Order): string {
+  if (order.status === 'paid') {
+    return `WICKED: Payment of Rs.${order.total.toLocaleString('en-IN')} received for Order ${order.id}. We are preparing your dispatch. Help: +91 76657 12877.`;
+  }
+  if (order.status === 'packed' || order.status === 'shipped' || order.status === 'delivered') {
+    const awb = order.trackingNumber ? ` AWB: ${order.trackingNumber}.` : '';
+    return `WICKED: Update for Order ${order.id} — status is now ${order.status.toUpperCase()}.${awb} Queries: +91 76657 12877.`;
+  }
+  if (order.status === 'returned' || order.status === 'cancelled') {
+    return `WICKED: Order ${order.id} is marked ${order.status.toUpperCase()}. Reach us at +91 76657 12877 for any assistance.`;
+  }
+  return `WICKED: Order ${order.id} for Rs.${order.total.toLocaleString('en-IN')} (${order.paymentMethod.toUpperCase()}) is confirmed! Queries: +91 76657 12877.`;
+}
+
+export function getStaticSmsLogs(): SmsLogRecord[] {
+  return readJson<SmsLogRecord[]>(SMS_LOGS_KEY, []).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+}
+
+export function saveStaticSmsLog(entry: SmsLogRecord): void {
+  const existing = getStaticSmsLogs().filter((l) => l.id !== entry.id);
+  existing.unshift(entry);
+  if (existing.length > 150) existing.length = 150;
+  writeJson(SMS_LOGS_KEY, existing);
+}
+
+export function mergeSmsLogs(...lists: SmsLogRecord[][]): SmsLogRecord[] {
+  const map = new Map<string, SmsLogRecord>();
+  for (const list of lists) {
+    for (const item of list) {
+      if (!item?.id) continue;
+      map.set(item.id, item);
+    }
+  }
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+}
+
+export async function recordSmsDispatch(params: {
+  to: string;
+  message: string;
+  event: SmsEventType;
+  provider?: SmsProviderType;
+  status?: SmsLogRecord['status'];
+  orderId?: string;
+  createdBy?: string;
+}): Promise<SmsLogRecord> {
+  const normalized = normalizeClientIndianPhone(params.to) || params.to.trim();
+  const id = `sms_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+  const createdBy = sanitizeFirestoreUserId(params.createdBy);
+  const record: SmsLogRecord = {
+    id,
+    orderId: params.orderId,
+    to: normalized,
+    message: params.message.trim().slice(0, 480),
+    event: params.event,
+    provider: params.provider || 'sandbox',
+    status: params.status || 'simulated',
+    createdBy,
+    createdAt: new Date().toISOString(),
+  };
+
+  saveStaticSmsLog(record);
+
+  try {
+    const docData: Record<string, unknown> = {
+      id: record.id,
+      to: record.to.slice(0, 24),
+      message: record.message.slice(0, 500),
+      event: record.event,
+      provider: record.provider,
+      status: record.status,
+      createdBy,
+      createdAt: serverTimestamp(),
+    };
+    if (record.orderId && /^[a-zA-Z0-9_-]{2,128}$/.test(record.orderId)) {
+      docData.orderId = record.orderId;
+    }
+    await setDoc(doc(db, 'smsLogs', record.id), docData);
+  } catch {
+    // Saved locally even if offline or unauthenticated
+  }
+
+  return record;
+}
+
+export function subscribeAdminSmsLogs(
+  onLogs: (logs: SmsLogRecord[]) => void,
+  onError?: (err: Error) => void
+): () => void {
+  const q = query(collection(db, 'smsLogs'), orderBy('createdAt', 'desc'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const logs: SmsLogRecord[] = snap.docs.map((d) => {
+        const raw = d.data() as Partial<SmsLogRecord>;
+        return {
+          id: String(raw.id || d.id),
+          orderId: raw.orderId ? String(raw.orderId) : undefined,
+          to: String(raw.to || ''),
+          message: String(raw.message || ''),
+          event: (raw.event || 'custom') as SmsEventType,
+          provider: (raw.provider || 'sandbox') as SmsProviderType,
+          status: (raw.status || 'simulated') as SmsLogRecord['status'],
+          createdBy: String(raw.createdBy || 'system'),
+          error: raw.error ? String(raw.error) : undefined,
+          createdAt: toIsoString(raw.createdAt),
+        };
+      });
+      onLogs(logs);
+    },
+    (error) => {
+      onError?.(error instanceof Error ? error : new Error(String(error)));
+    }
+  );
+}
+
+export function staticRequestSmsOtp(phone: string): {
+  phone: string;
+  previewCode: string;
+  message: string;
+} {
+  const normalized = normalizeClientIndianPhone(phone);
+  if (!normalized) {
+    throw new Error('Enter a valid 10-digit Indian mobile number.');
+  }
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  try {
+    sessionStorage.setItem(
+      OTP_SESSION_KEY,
+      JSON.stringify({ email: `sms:${normalized}`, code, exp: Date.now() + 10 * 60_000 })
+    );
+  } catch {
+    // Ignore storage error
+  }
+  void recordSmsDispatch({
+    to: normalized,
+    message: `Your Wicked verification code is ${code}. Valid for 10 minutes.`,
+    event: 'otp',
+    provider: 'sandbox',
+    status: 'simulated',
+    createdBy: `otp_${normalized.replace(/\D/g, '')}`,
+  });
+  return {
+    phone: normalized,
+    previewCode: code,
+    message: `6-digit SMS code generated for ${normalized}.`,
+  };
+}
+
+export function staticVerifySmsOtp(
+  phone: string,
+  code: string
+): { token: string; phone: string; email: string; isAdmin: boolean } {
+  const normalized = normalizeClientIndianPhone(phone);
+  if (!normalized) {
+    throw new Error('Enter a valid 10-digit Indian mobile number.');
+  }
+  let stored: { email: string; code: string; exp: number } | null = null;
+  try {
+    const raw = sessionStorage.getItem(OTP_SESSION_KEY);
+    if (raw) stored = JSON.parse(raw);
+  } catch {
+    // Ignore
+  }
+  if (
+    !stored ||
+    stored.email !== `sms:${normalized}` ||
+    stored.code !== code.trim() ||
+    Date.now() > stored.exp
+  ) {
+    throw new Error('Invalid or expired 6-digit SMS code.');
+  }
+  try {
+    sessionStorage.removeItem(OTP_SESSION_KEY);
+  } catch {
+    // Ignore
+  }
+  return {
+    token: `static_sms_${Date.now().toString(36)}`,
+    phone: normalized,
+    email: `${normalized.replace(/\D/g, '')}@sms.wicked.in`,
+    isAdmin: false,
+  };
 }

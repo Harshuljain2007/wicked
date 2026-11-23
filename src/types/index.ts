@@ -175,3 +175,27 @@ export interface BannerConfig {
   heroImage: string;
   active: boolean;
 }
+
+export type SmsEventType =
+  | 'order_placed'
+  | 'payment_confirmed'
+  | 'status_update'
+  | 'refund'
+  | 'otp'
+  | 'custom';
+
+export type SmsProviderType = 'twilio' | 'fast2sms' | 'sandbox' | 'device_sms';
+
+export interface SmsLogRecord {
+  id: string;
+  orderId?: string;
+  to: string;
+  message: string;
+  event: SmsEventType;
+  provider: SmsProviderType;
+  status: 'sent' | 'simulated' | 'queued' | 'failed';
+  createdBy: string;
+  error?: string;
+  createdAt: string;
+}
+

@@ -3,6 +3,7 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { attachUser, type AuthenticatedRequest } from '../lib/authMiddleware.ts';
 import { catalogStore } from '../lib/catalogStore.ts';
+import { SERVER_CONFIG } from '../lib/config.ts';
 import {
   createRazorpayOrder,
   signTestSandboxPayment,
@@ -10,6 +11,12 @@ import {
   verifyRazorpayWebhookSignature,
 } from '../lib/razorpay.ts';
 import { paymentRateLimiter } from '../lib/rateLimiters.ts';
+import {
+  buildOrderPlacedSms,
+  buildOwnerNewOrderSms,
+  buildPaymentConfirmedSms,
+  sendSms,
+} from '../lib/sms.ts';
 
 export const paymentsRouter = Router();
 
@@ -197,6 +204,24 @@ paymentsRouter.post('/verify', paymentRateLimiter, (req, res) => {
   }
 
   const updated = catalogStore.markOrderPaid(order.id, parsed.data.razorpay_payment_id);
+  if (updated) {
+    void sendSms({
+      to: updated.customerPhone,
+      message: buildPaymentConfirmedSms(updated),
+      event: 'payment_confirmed',
+      orderId: updated.id,
+      createdBy: updated.userId,
+    });
+    if (SERVER_CONFIG.ownerAlertPhone) {
+      void sendSms({
+        to: SERVER_CONFIG.ownerAlertPhone,
+        message: buildOwnerNewOrderSms(updated),
+        event: 'payment_confirmed',
+        orderId: updated.id,
+        createdBy: 'system',
+      });
+    }
+  }
   res.json({
     verified: true,
     order: updated,
@@ -239,6 +264,23 @@ paymentsRouter.post('/cod', paymentRateLimiter, attachUser, (req: AuthenticatedR
     items: calc.items,
     shippingAddress: parsed.data.shippingAddress,
   });
+
+  void sendSms({
+    to: order.customerPhone,
+    message: buildOrderPlacedSms(order),
+    event: 'order_placed',
+    orderId: order.id,
+    createdBy: order.userId,
+  });
+  if (SERVER_CONFIG.ownerAlertPhone) {
+    void sendSms({
+      to: SERVER_CONFIG.ownerAlertPhone,
+      message: buildOwnerNewOrderSms(order),
+      event: 'order_placed',
+      orderId: order.id,
+      createdBy: 'system',
+    });
+  }
 
   res.json({
     order,
