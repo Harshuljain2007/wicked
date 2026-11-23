@@ -112,6 +112,8 @@ export function downloadGstInvoicePdf(order: Order): void {
   doc.setFontSize(9);
   doc.setTextColor(77, 90, 72);
   doc.text('This is a computer-generated GST tax invoice. 7-day size exchange applicable on unworn garments.', margin, y);
+  y += 14;
+  doc.text('Studio Support: harshuljain923@gmail.com | +91 76657 12877', margin, y);
 
   doc.save(`Wicked-Invoice-${order.id}.pdf`);
 }

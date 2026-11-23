@@ -1,5 +1,10 @@
+import { Mail, Phone } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { useDocumentMeta } from '../hooks/useDocumentMeta';
+
+const STUDIO_EMAIL = 'harshuljain923@gmail.com';
+const STUDIO_PHONE_DISPLAY = '+91 76657 12877';
+const STUDIO_PHONE_HREF = 'tel:+917665712877';
 
 const POLICY_COPY: Record<
   string,
@@ -70,8 +75,8 @@ const POLICY_COPY: Record<
     updated: 'Jaipur & Bengaluru, India',
     sections: [
       {
-        heading: 'Customer Care',
-        body: 'Email care@wickedindia.in or message our Bengaluru studio desk Monday through Saturday, 10:00 AM to 7:00 PM IST.',
+        heading: 'Direct Support Desk',
+        body: `Reach us directly at ${STUDIO_EMAIL} or call ${STUDIO_PHONE_DISPLAY} Monday through Saturday, 10:00 AM to 7:00 PM IST for sizing, order updates, and exchange assistance.`,
       },
       {
         heading: 'Registered Office',
@@ -96,6 +101,38 @@ export function PolicyPage() {
       <h1 className="font-display text-3xl sm:text-4xl font-bold mt-1 pb-6 border-b border-[#C5D1B8]">
         {content.title}
       </h1>
+
+      {type === 'contact' && (
+        <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <a
+            href={`mailto:${STUDIO_EMAIL}`}
+            className="flex items-center gap-3.5 rounded-xl bg-[#FCFBF7] border border-[#C5D1B8] p-4 hover:border-[#9CAF88] transition-colors"
+          >
+            <div className="w-10 h-10 rounded-lg bg-[#E7ECE0] border border-[#C5D1B8] flex items-center justify-center text-[#1F2A1C] shrink-0">
+              <Mail className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-[#4D5A48]">Email Studio</p>
+              <p className="text-sm font-semibold text-[#1F2A1C] truncate">{STUDIO_EMAIL}</p>
+            </div>
+          </a>
+
+          <a
+            href={STUDIO_PHONE_HREF}
+            className="flex items-center gap-3.5 rounded-xl bg-[#FCFBF7] border border-[#C5D1B8] p-4 hover:border-[#9CAF88] transition-colors"
+          >
+            <div className="w-10 h-10 rounded-lg bg-[#E7ECE0] border border-[#C5D1B8] flex items-center justify-center text-[#1F2A1C] shrink-0">
+              <Phone className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-[#4D5A48]">Call / WhatsApp</p>
+              <p className="text-sm font-semibold text-[#1F2A1C] tabular-nums">
+                {STUDIO_PHONE_DISPLAY}
+              </p>
+            </div>
+          </a>
+        </div>
+      )}
 
       <div className="mt-8 space-y-8">
         {content.sections.map((s) => (

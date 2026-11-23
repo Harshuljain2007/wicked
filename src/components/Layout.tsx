@@ -1,4 +1,4 @@
-import { ArrowUp, Heart, Menu, Search, ShoppingBag, User, X } from 'lucide-react';
+import { ArrowUp, Heart, Mail, Menu, Phone, Search, ShoppingBag, User, X } from 'lucide-react';
 import {
   AnimatePresence,
   motion,
@@ -237,6 +237,22 @@ export function Layout({ children }: { children: ReactNode }) {
             <p className="text-sm mt-3 max-w-md leading-relaxed text-[#1F2A1C]/90">
               Contemporary Indian streetwear, ethnic fusion kurtas, and heavyweight organic cotton essentials designed between Jaipur and Bengaluru.
             </p>
+            <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+              <a
+                href="mailto:harshuljain923@gmail.com"
+                className="inline-flex items-center gap-2 font-medium hover:underline"
+              >
+                <Mail className="w-4 h-4 shrink-0" />
+                <span>harshuljain923@gmail.com</span>
+              </a>
+              <a
+                href="tel:+917665712877"
+                className="inline-flex items-center gap-2 font-medium tabular-nums hover:underline"
+              >
+                <Phone className="w-4 h-4 shrink-0" />
+                <span>+91 76657 12877</span>
+              </a>
+            </div>
           </div>
 
           <div>
